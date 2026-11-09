@@ -20,7 +20,7 @@ jobs:
         working-directory: .
         run: |
           $archive = 'source-downloads/JARVIS_1.3.0_Neural_Core_Source.zip'
-          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne '51b7947dac37f9dd4a4367b3a8d5a5f52165ea9a3cbb845028c300feb142419c') { throw 'Source checksum mismatch' }
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne '2852d78c73ed9bbb0f590bab659382880e4e8670ccc92659e2b51c9915abf0d0') { throw 'Source checksum mismatch' }
           Expand-Archive $archive -DestinationPath build-source
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -40,16 +40,17 @@ jobs:
         run: npm run build
       - name: Telemetry regression tests
         run: npm test
-      - name: Native Windows SQLite provider and RAG tests
-        run: cargo test --manifest-path crates/neural-core/Cargo.toml --locked
-      - name: Native Windows isolated Credential Manager test
-        run: cargo test --manifest-path src-tauri/Cargo.toml --locked credential_roundtrip_replace_and_delete -- --ignored
       - name: Verify Windows speech host without microphone capture
         run: |
           $output = & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/voice-host-probe.ps1
           $capability = $output | Where-Object { $_ -match '^\{' } | Select-Object -Last 1 | ConvertFrom-Json
           if ($null -eq $capability -or $capability.type -ne 'capabilities') { throw 'Local Windows speech host compilation/probe failed' }
+          $capability | ConvertTo-Json -Depth 5 -Compress | Set-Content speech-capabilities.json -Encoding utf8NoBOM
           Write-Output "Windows speech host compiled; German voices: $($capability.voices.Count); German recognizer: $($capability.recognition). No microphone was opened."
+      - name: Native Windows SQLite provider and RAG tests
+        run: cargo test --manifest-path crates/neural-core/Cargo.toml --locked
+      - name: Native Windows isolated Credential Manager test
+        run: cargo test --release --manifest-path src-tauri/Cargo.toml --locked credential_roundtrip_replace_and_delete -- --ignored
       - name: Build native x64 NSIS installer
         run: npm run tauri build -- --ci -- --locked
       - name: Verify installer payload and prepare delivery
@@ -80,18 +81,20 @@ jobs:
           Copy-Item ../../source-downloads/JARVIS_1.3.0_Neural_Core_Source.zip release-output/
           $hashes = Get-ChildItem release-output -File | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" }
           $hashes | Set-Content release-output/SHA256SUMS.txt -Encoding utf8NoBOM
+          $speech = Get-Content speech-capabilities.json | ConvertFrom-Json
           @"
           # J.A.R.V.I.S. 1.3 – Windows Beta
 
           Nativer Windows-x64-MSVC-Release-Build mit NSIS-Installer.
-          Geprüft: TypeScript, React-Build, sechs Telemetrietests, 15 Core-Tests mit SQLite/RAG/HTTP-Testserver, isolierter Credential-Manager-Roundtrip, Windows-System.Speech-Host-Kompilierung und Anbieterprobe ohne Mikrofonaufnahme.
+          Geprüft: TypeScript, React-Build, sechs Telemetrietests, 15 Core-Tests mit SQLite/RAG/HTTP-Testserver, isolierter Credential-Manager-Roundtrip, Windows-System.Speech-Host-Kompilierung und Fähigkeitenprobe mit roher UTF-8-Eingabe ohne Mikrofonaufnahme.
+          Sprachprobe auf dem CI-Runner: $($speech.voices.Count) deutsche Stimmen, deutscher Erkenner: $($speech.recognition). Kein Audio-/Mikrofontest.
           Zusätzlich: NSIS-Archiv entpackt/geprüft, x64-Anwendungsdatei und bytegleiche Voice-Ressourcen bestätigt.
 
           Der Installer ist unsigniert. Installation/Deinstallation, tatsächliche Hardwaremessung, Mikrofonaufnahme, deutsche Stimmen und reale OpenAI-/Groq-Konten wurden nicht getestet.
           Kein stabiler Produktivfreigabenachweis. Microsoft WebView2 und die in README_DE.md genannten Sprachvoraussetzungen gelten.
           API-Schlüssel werden nicht mitgeliefert; sie sind nach Installation ausdrücklich im Windows Credential Manager einzurichten.
 
-          Source SHA-256: 51b7947dac37f9dd4a4367b3a8d5a5f52165ea9a3cbb845028c300feb142419c
+          Source SHA-256: 2852d78c73ed9bbb0f590bab659382880e4e8670ccc92659e2b51c9915abf0d0
           Build: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID
           "@ | Set-Content release-output/BUILD_REPORT.md -Encoding utf8NoBOM
       - name: Upload Windows beta release
