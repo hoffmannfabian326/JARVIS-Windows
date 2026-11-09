@@ -20,7 +20,7 @@ jobs:
         working-directory: .
         run: |
           $archive = 'source-downloads/JARVIS_1.3.0_Neural_Core_Source.zip'
-          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne '2852d78c73ed9bbb0f590bab659382880e4e8670ccc92659e2b51c9915abf0d0') { throw 'Source checksum mismatch' }
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne '2085beaa245a05fd3ec8e292eac40e6725359b597b045ece5f4ecd246480017c') { throw 'Source checksum mismatch' }
           Expand-Archive $archive -DestinationPath build-source
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -94,7 +94,7 @@ jobs:
           Kein stabiler Produktivfreigabenachweis. Microsoft WebView2 und die in README_DE.md genannten Sprachvoraussetzungen gelten.
           API-Schlüssel werden nicht mitgeliefert; sie sind nach Installation ausdrücklich im Windows Credential Manager einzurichten.
 
-          Source SHA-256: 2852d78c73ed9bbb0f590bab659382880e4e8670ccc92659e2b51c9915abf0d0
+          Source SHA-256: 2085beaa245a05fd3ec8e292eac40e6725359b597b045ece5f4ecd246480017c
           Build: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID
           "@ | Set-Content release-output/BUILD_REPORT.md -Encoding utf8NoBOM
       - name: Upload Windows beta release
