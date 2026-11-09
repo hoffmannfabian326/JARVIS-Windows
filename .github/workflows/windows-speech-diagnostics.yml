@@ -32,7 +32,7 @@ jobs:
         run: |
           & tests/voice-host-probe.ps1
       - name: Probe with native redirected standard input as used by Rust
-        shell: powershell
+        shell: pwsh
         working-directory: build-source/JARVIS_1.3.0
         run: |
           $process = New-Object System.Diagnostics.Process
