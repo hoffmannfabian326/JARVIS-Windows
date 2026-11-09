@@ -31,3 +31,25 @@ jobs:
         working-directory: build-source/JARVIS_1.3.0
         run: |
           & tests/voice-host-probe.ps1
+      - name: Probe with native redirected standard input as used by Rust
+        shell: powershell
+        working-directory: build-source/JARVIS_1.3.0
+        run: |
+          $process = New-Object System.Diagnostics.Process
+          $process.StartInfo.FileName = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+          $script = (Resolve-Path src-tauri/voice/launch.ps1).Path
+          $source = (Resolve-Path src-tauri/voice/VoiceHost.cs).Path
+          $process.StartInfo.Arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$script`" -Source `"$source`""
+          $process.StartInfo.UseShellExecute = $false
+          $process.StartInfo.RedirectStandardInput = $true
+          $process.StartInfo.RedirectStandardOutput = $true
+          $process.StartInfo.RedirectStandardError = $true
+          $process.StartInfo.StandardInputEncoding = New-Object System.Text.UTF8Encoding($false)
+          $process.Start() | Out-Null
+          $process.StandardInput.WriteLine('{"mode":"probe"}')
+          $process.StandardInput.Flush()
+          $process.StandardInput.Close()
+          $output = $process.StandardOutput.ReadToEnd()
+          $process.WaitForExit()
+          Write-Output $output
+          if (($output | ConvertFrom-Json).type -ne 'capabilities') { throw 'Native pipe speech probe failed' }
