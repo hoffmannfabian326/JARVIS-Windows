@@ -1,0 +1,47 @@
+name: Repair verified chat release source archive only
+on:
+  push:
+    branches: [fix/restore-text-chat]
+    paths: [.github/workflows/repair-chat-source-asset.yml]
+permissions:
+  contents: write
+jobs:
+  repair-source:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: 0d5a91f6f45b86edae8bc28c08a3e6723a0bff42
+      - name: Replace empty source export from exact unchanged release commit
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force release-repair | Out-Null
+          gh release download v1.4.2-beta.1 --repo "$env:GITHUB_REPOSITORY" --dir release-repair
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $installer='release-repair/JARVIS_1.4.2_Windows_x64_Test_Setup.exe'
+          if((Get-FileHash $installer -Algorithm SHA256).Hash.ToLower() -ne '0abdf975ab67ede7eb17a3520b6c72422a350a4f19f4295a678790686c8eb0d5'){throw 'Do not alter the verified installer'}
+          $source=Join-Path (Get-Location) 'release-repair/JARVIS_1.4.2_Chat_Source.zip'
+          # git archive is intentionally invoked at repository root, not app/JARVIS.
+          git archive --format=zip --prefix=JARVIS_1.4.2/ --output="$source" HEAD:app/JARVIS
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $archive=[IO.Compression.ZipFile]::OpenRead($source)
+          try {
+            if($archive.Entries.Count -lt 90 -or $null -eq $archive.GetEntry('JARVIS_1.4.2/src/ChatPanel.tsx')){throw 'Source archive incomplete'}
+            Write-Output "Verified source entries: $($archive.Entries.Count)"
+          } finally {$archive.Dispose()}
+          $hash=(Get-FileHash $source -Algorithm SHA256).Hash.ToLower()
+          $report='release-repair/BUILD_REPORT_1.4.2.md'
+          $text=Get-Content $report -Raw
+          $text=[regex]::Replace($text,'Source SHA-256: [0-9a-f]{64}',"Source SHA-256: $hash")
+          $text+="`n## Korrigierter Quellcode-Export`nDie erste Download-Gegenprüfung fand ein leeres Quellarchiv: git archive war aus dem App-Unterverzeichnis statt aus dem Repository-Root aufgerufen worden. Das Quell-ZIP wurde aus dem unveränderten Release-Commit 0d5a91f6f45b86edae8bc28c08a3e6723a0bff42 neu exportiert und auf Vollständigkeit geprüft. Installer und Anwendungsdatei bleiben unverändert. Prüfsummen und Releasebericht wurden aktualisiert.`nReparaturlauf: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID`n"
+          $text | Set-Content $report -Encoding utf8NoBOM
+          Get-ChildItem release-repair -File | Where-Object Name -ne 'SHA256SUMS.txt' | ForEach-Object {"$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"} | Set-Content release-repair/SHA256SUMS.txt -Encoding utf8NoBOM
+          gh release upload v1.4.2-beta.1 $source $report release-repair/SHA256SUMS.txt --repo "$env:GITHUB_REPOSITORY" --clobber
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          gh release edit v1.4.2-beta.1 --repo "$env:GITHUB_REPOSITORY" --notes-file $report
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}

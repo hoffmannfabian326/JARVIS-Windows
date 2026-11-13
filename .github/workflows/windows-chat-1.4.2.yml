@@ -2,7 +2,8 @@ name: Windows text chat restoration 1.4.2 verification and installer
 on:
   push:
     branches: [fix/restore-text-chat]
-    paths: [app/JARVIS/**, .github/workflows/windows-chat-1.4.2.yml]
+    paths: [app/JARVIS/**]
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
@@ -144,8 +145,11 @@ jobs:
         run: |
           Compress-Archive -Path release-output/JARVIS_1.4.2_Windows_x64_Test_Setup.exe -DestinationPath release-output/JARVIS_1.4.2_Windows_x64_Test.zip
           $source=Join-Path (Get-Location) 'release-output/JARVIS_1.4.2_Chat_Source.zip'
-          git archive --format=zip --prefix=JARVIS_1.4.2/ --output="$source" HEAD:app/JARVIS
+          $root=(git rev-parse --show-toplevel).Trim()
+          git -C "$root" archive --format=zip --prefix=JARVIS_1.4.2/ --output="$source" HEAD:app/JARVIS
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $archive=[IO.Compression.ZipFile]::OpenRead($source)
+          try {if($archive.Entries.Count -lt 90 -or $null -eq $archive.GetEntry('JARVIS_1.4.2/src/ChatPanel.tsx')){throw 'Source archive is incomplete'}} finally {$archive.Dispose()}
           Copy-Item docs/CHAT_REPARATUR_1.4.2.md release-output/
           Copy-Item speech-capabilities.json release-output/
           $runtime=Get-Content release-output/WINDOWS_RUNTIME_SMOKE.json | ConvertFrom-Json
