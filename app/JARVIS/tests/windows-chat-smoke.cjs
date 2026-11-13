@@ -3,13 +3,13 @@
 const {chromium,expect}=require('@playwright/test');
 const {spawn,execFileSync}=require('node:child_process');const fs=require('node:fs');const path=require('node:path');const net=require('node:net');
 const [binary,output]=process.argv.slice(2);if(!binary||!output)throw Error('Binary and output paths required');fs.mkdirSync(output,{recursive:true});
-const report={real_tauri_app:true,tauri_ipc:false,text_input:false,core_preview:false,provider_switch:false,network_error:false,voice_panel:false,real_provider_success:false,real_api_key_used:false,microphone_opened:false,dummy_key_deleted:false,phase:'launch'};
+const report={real_tauri_app:true,tauri_ipc:false,text_input:false,core_preview:false,provider_switch:false,network_error:false,voice_panel:false,real_provider_success:false,real_api_key_used:false,microphone_opened:false,dummy_key_deleted:false,phase:'launch',endpoint_seen:false,process_alive:false,process_exit_code:null,webview_processes:0,remote_debugging_arg:false};
 (async()=>{
  const port=await new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});});
  let app,browser,page,dummyStored=false;
  try{
   app=spawn(binary,[],{stdio:'ignore',env:{...process.env,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port} --remote-debugging-address=127.0.0.1 --force-renderer-accessibility`,WEBVIEW2_USER_DATA_FOLDER:path.join(process.env.RUNNER_TEMP,'jarvis-chat-cdp-'+port)}});
-  const deadline=Date.now()+45000;while(Date.now()<deadline){try{const r=await fetch(`http://127.0.0.1:${port}/json/version`);if(r.ok)break;}catch{}await new Promise(r=>setTimeout(r,300));}
+  const deadline=Date.now()+45000;while(Date.now()<deadline){try{const r=await fetch(`http://127.0.0.1:${port}/json/version`);if(r.ok){report.endpoint_seen=true;break;}}catch{}await new Promise(r=>setTimeout(r,300));}
   report.phase='connect_webview';browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   const context=browser.contexts()[0];if(!context)throw Error('WebView2 context unavailable');
   for(let i=0;i<100;i++){page=context.pages().find(p=>p.url().includes('tauri.localhost'));if(page)break;await new Promise(r=>setTimeout(r,200));}
@@ -34,6 +34,8 @@ const report={real_tauri_app:true,tauri_ipc:false,text_input:false,core_preview:
   report.phase='voice_panel';await page.getByRole('button',{name:'KI-Chat schließen',exact:true}).click();await page.getByRole('navigation',{name:'Dashboard-Module'}).getByRole('button',{name:/Voice/}).click();await expect(page.getByRole('button',{name:'Stimmen erneut suchen',exact:true})).toBeVisible();await expect(page.getByRole('checkbox',{name:/Ich erlaube das Mikrofon/})).not.toBeChecked();report.voice_panel=true;
   report.phase='complete';
  }finally{
+  if(app){report.process_alive=app.exitCode===null;report.process_exit_code=app.exitCode;try{const data=JSON.parse(execFileSync('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-Command',"$p=@(Get-CimInstance Win32_Process|Where-Object Name -eq 'msedgewebview2.exe');@{count=$p.Count;debug=@($p|Where-Object {$_.CommandLine -like '*--remote-debugging-port*'}).Count}|ConvertTo-Json -Compress"],{encoding:'utf8'}));report.webview_processes=data.count;report.remote_debugging_arg=data.debug>0;}catch{}}
+  console.log('SAFE_NATIVE_DIAGNOSTIC '+JSON.stringify(report));
   if(dummyStored&&page){try{await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('ai_key_delete',{provider:'openai'}));const s=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('neural_status'));report.dummy_key_deleted=!s.keys.openai;}catch{}}
   if(app?.pid){try{execFileSync('taskkill.exe',['/PID',String(app.pid),'/T','/F'],{stdio:'ignore'});}catch{}}
   if(browser)await browser.close().catch(()=>{});

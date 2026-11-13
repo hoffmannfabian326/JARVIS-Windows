@@ -91,6 +91,10 @@ jobs:
           $binary=(Resolve-Path src-tauri/target/release/jarvis-command-center.exe).Path
           ./tests/windows-chat-smoke.ps1 -Binary $binary -OutputDirectory (Join-Path (Get-Location) 'release-output')
           (Get-FileHash $binary -Algorithm SHA256).Hash.ToLower() | Set-Content release-output/TESTED_APP_SHA256.txt -Encoding utf8NoBOM
+      - name: Safe native UI diagnostic on failure
+        if: failure()
+        run: |
+          if(Test-Path release-output/WINDOWS_CHAT_SMOKE.json){Get-Content release-output/WINDOWS_CHAT_SMOKE.json}
       - name: Create test installer only after successful native application checks
         run: |
           $config=(Resolve-Path src-tauri/tauri.test-installer.conf.json).Path
