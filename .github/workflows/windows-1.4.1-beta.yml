@@ -1,0 +1,151 @@
+name: Windows x64 voice selection fix 1.4.1 test installer
+on:
+  push:
+    branches: [release/v1.4.1-beta.1]
+permissions:
+  contents: write
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/build-source/JARVIS_1.4.1/src-tauri/target
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: build-source/JARVIS_1.4.1
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify and unpack reviewed source
+        working-directory: .
+        run: |
+          $archive='source-downloads/JARVIS_1.4.1_Voice_Fix_Source.zip'
+          if((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne 'f0d33a9bedf0cae4421fa460ac6a2fc01ff8020c0b8e3e686653b9b5f6de7ae1'){throw 'Source checksum mismatch'}
+          Expand-Archive $archive -DestinationPath build-source
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Prepare native Windows MSVC
+        run: |
+          rustup toolchain install stable --profile minimal
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          rustup default stable
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          rustc -vV
+      - name: Locked frontend dependencies
+        run: npm ci
+      - name: TypeScript verification
+        run: npm run check
+      - name: React production build
+        run: npm run build
+      - name: Telemetry and voice policy tests
+        run: npm test
+      - name: Windows AudioCapture lifecycle contract without microphone
+        run: |
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/run-audio-capture-contract.ps1
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Native C sharp voice catalog JSON and real TTS rendering without loudspeaker
+        run: |
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/run-voice-catalog-contract.ps1
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Compile and probe installed Windows speech APIs without microphone
+        run: |
+          $output=& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/voice-host-probe.ps1
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $capability=$output | Where-Object {$_ -match '^\{'} | Select-Object -Last 1 | ConvertFrom-Json
+          if($null -eq $capability -or $capability.type -ne 'capabilities'){throw 'Speech probe failed'}
+          $capability | ConvertTo-Json -Depth 5 | Set-Content speech-capabilities.json -Encoding utf8NoBOM
+          Write-Output "System.Speech host compiled; Installed desktop voices: $($capability.voices.Count); German recognizer: $($capability.recognition). No microphone opened."
+      - name: Native SQLite provider RAG and intent tests
+        run: cargo test --release --manifest-path crates/neural-core/Cargo.toml --locked
+      - name: Native credentials device inventory and process cancellation tests
+        run: cargo test --release --manifest-path src-tauri/Cargo.toml --locked -- --include-ignored
+      - name: Build authorized native x64 NSIS test installer
+        run: |
+          $config=(Resolve-Path src-tauri/tauri.test-installer.conf.json).Path
+          npm run tauri build -- --config "$config" --ci -- --locked
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Verify installer architecture and voice payload
+        run: |
+          New-Item -ItemType Directory -Force release-output | Out-Null
+          $installers=@(Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe)
+          if($installers.Count -ne 1){throw 'Expected exactly one installer'}
+          $setup=Join-Path (Get-Location) 'release-output/JARVIS_1.4.1_Windows_x64_Test_Setup.exe'
+          Copy-Item $installers[0].FullName $setup
+          $sevenZip='C:\Program Files\7-Zip\7z.exe'
+          & $sevenZip t $setup
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $extract=Join-Path $env:RUNNER_TEMP 'jarvis14-installer-payload'
+          & $sevenZip x '-y' "-o$extract" $setup
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          foreach($name in @('VoiceHost.cs','AudioCapture.cs','VoiceCatalog.cs','launch.ps1')){
+            $payload=@(Get-ChildItem $extract -Recurse -File | Where-Object Name -eq $name)
+            if($payload.Count -ne 1){throw "Missing voice resource: $name"}
+            if((Get-FileHash $payload[0].FullName).Hash -ne (Get-FileHash "src-tauri/voice/$name").Hash){throw "Voice resource mismatch: $name"}
+          }
+          $binary=@(Get-ChildItem $extract -Recurse -Filter 'jarvis-command-center.exe')
+          if($binary.Count -ne 1){throw 'Missing app binary'}
+          $bytes=[IO.File]::ReadAllBytes($binary[0].FullName)
+          $pe=[BitConverter]::ToInt32($bytes,0x3c)
+          if([BitConverter]::ToUInt16($bytes,$pe+4) -ne 0x8664){throw 'App is not x64'}
+      - name: Native installation application execution and uninstallation smoke
+        run: |
+          $setup=(Resolve-Path release-output/JARVIS_1.4.1_Windows_x64_Test_Setup.exe).Path
+          ./tests/windows-installed-smoke.ps1 -Installer $setup -OutputDirectory (Join-Path (Get-Location) 'release-output')
+      - name: Prepare repair and native execution reports
+        run: |
+          Compress-Archive -Path release-output/JARVIS_1.4.1_Windows_x64_Test_Setup.exe -DestinationPath release-output/JARVIS_1.4.1_Windows_x64_Test.zip
+          Copy-Item ../../source-downloads/JARVIS_1.4.1_Voice_Fix_Source.zip release-output/
+          Copy-Item docs/STIMMENREPARATUR_1.4.1.md release-output/
+          Copy-Item speech-capabilities.json release-output/
+          $speech=Get-Content speech-capabilities.json | ConvertFrom-Json
+          $runtime=Get-Content release-output/WINDOWS_RUNTIME_SMOKE.json | ConvertFrom-Json
+          $german=@($speech.voices | Where-Object culture -eq 'de-DE').Count
+          $english=@($speech.voices | Where-Object culture -eq 'en-US').Count
+          @"
+          # J.A.R.V.I.S. 1.4.1-beta.1 – Windows-Stimmenreparatur / Testbuild
+
+          Unsignierter Testinstaller. Die Ursache der leeren Hedda-Liste auf dem Nutzerrechner bleibt ohne dortige Diagnose NICHT VERIFIZIERT.
+          Repariert: verschluckte Stimmenabfragefehler, fehlende Speicherung, wirkungsloser Stimmtest bei ausgeschaltetem Vorlesen und begrenzter JSON-Transport.
+          Keine andere Sprachengine, keine Registry-Änderungen, keine Administratorpflicht.
+
+          ## Tatsächlich ausgeführt
+          Umgebung: $($runtime.os), natives MSVC x86_64-pc-windows-msvc.
+          TypeScript, React-Produktionsbuild, neun Node-Tests, 23 Core-Tests und zwölf native Backend-Tests erfolgreich.
+          Native Backend-Tests umfassen sicheren Credential-Manager-Roundtrip, Geräteabfrage ohne Aufnahme, echten Prozessabbruch, Stimmen-ID-Datei inklusive Ersetzung/Wiederherstellung/Fehlerdaten, JSON-Vertrag und echten verdeckten System.Speech-Host über Rust sowie reale Prozessverzögerung/Timeout.
+          C#5/System.Speech-Katalog nativ geprüft: de-DE/en-US/Enabled/JSON mit Testdaten und tatsächliche Windows-Stimmen. Verfügbare Stimme technisch mit SetOutputToNull gerendert, keine hörbare Ausgabe zertifiziert.
+          WinMM-AudioCapture-Vertrag mit synthetischem PCM weiterhin erfolgreich; keine Mikrofonaufnahme.
+          Separat lokal: 25 Chromium-Browser-Regressionen bestanden; IPC und Speicherung im Browser sind Testdoubles. Tatsächliche Dateispeicherung wird in Rust geprüft.
+
+          Stimmenprobe des Windows-Runners: $($speech.voices.Count) Desktop-Stimmen, davon de-DE: $german, en-US: $english. Host: $($speech.host_architecture), Protokoll: $($speech.protocol_version). TTS-Abfragefehler: $($speech.tts_error). Deutscher Erkenner: $($speech.recognition).
+          Hedda-/Zira-Testdaten sind keine Behauptung über installierte deutsche Runner-Stimmen.
+
+          ## Installer und reale Anwendung
+          NSIS-Archiv geprüft, x64-Anwendung und alle vier Voice-Ressourcen identisch mit Quellpaket.
+          Installation: $($runtime.installed); Anwendungsfenster: $($runtime.window_created); HUD: $($runtime.hud_rendered).
+          Mikrofon standardmäßig aus: $($runtime.microphone_default_off).
+          Reguläres Schließen: $($runtime.graceful_close); Deinstallation: $($runtime.uninstalled).
+          Datenbank erstellt: $($runtime.database_created); nach Deinstallation erhalten: $($runtime.database_preserved_after_uninstall).
+          Lokaler CPU-Befehl via UI Automation: $($runtime.local_cpu_tool); Offline-Firewall aktiv: $($runtime.offline_enforced).
+          Einschränkungen des Automatisierungslaufs: $($runtime.notes -join ' ')
+          Ein False bei UI-Automation bedeutet NICHT VERIFIZIERT, nicht automatisch eine defekte App-Funktion.
+
+          ## Noch NICHT VERIFIZIERT
+          Alle sechs verbindlichen Kriterien auf dem Nutzerrechner: Installation/Start dort, Hedda sichtbar, Auswahl dort, hörbarer deutscher Stimmtest, Wiederherstellung beim dortigen Neustart und unveränderte übrige Funktionen auf dessen Hardware.
+          Ebenfalls offen: akustisches Wake-Word, echte Mikrofone/STT/TTS/Echo, echte API-Konten, vollständige Windows-10/11-Abnahme. Windows Server ist kein Client-Audiotestplatz.
+          Keine echten API-Schlüssel im Paket, keine realen Provideranfragen oder Mikrofonaufnahmen im Test. Bestehende Freigaben und API-Kostenhinweise gelten weiter.
+          Technische Ursache, Dateiliste, sichere Diagnose und Praxistest: STIMMENREPARATUR_1.4.1.md.
+
+          Source SHA-256: f0d33a9bedf0cae4421fa460ac6a2fc01ff8020c0b8e3e686653b9b5f6de7ae1
+          Build: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID
+          "@ | Set-Content release-output/BUILD_REPORT_1.4.1.md -Encoding utf8NoBOM
+          Get-ChildItem release-output -File | Where-Object Name -ne 'SHA256SUMS.txt' | ForEach-Object {"$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"} | Set-Content release-output/SHA256SUMS.txt -Encoding utf8NoBOM
+      - name: Publish requested private GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets=@(Get-ChildItem release-output -File | ForEach-Object FullName)
+          gh release create v1.4.1-beta.1 @assets --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --title 'J.A.R.V.I.S. 1.4.1 – Windows-Stimmenreparatur · Testbuild' --prerelease --notes-file release-output/BUILD_REPORT_1.4.1.md
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
