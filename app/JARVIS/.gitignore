@@ -15,3 +15,7 @@ playwright-report/
 *.sqlite3-*
 JARVIS-Gedaechtnis*.json
 JARVIS-Chat-Export*.json
+
+/node_modules
+
+release-output/

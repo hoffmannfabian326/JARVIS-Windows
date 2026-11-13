@@ -1,3 +1,9 @@
+# Version 1.4.2 – optionaler KI-Textchat
+
+Aktueller Patch und Praxistest: [docs/CHAT_REPARATUR_1.4.2.md](docs/CHAT_REPARATUR_1.4.2.md).
+Chat über den Schalter in der Statusleiste öffnen; Versandvorschau vor jeder Cloud-Anfrage.
+Die folgenden Dokumente beschreiben die erhaltenen Voice- und übrigen Funktionen.
+
 # Version 1.4.1 – Windows-Stimmenreparatur
 
 Aktuelle Reparatur, Grenzen und Praxistest: [docs/STIMMENREPARATUR_1.4.1.md](docs/STIMMENREPARATUR_1.4.1.md).

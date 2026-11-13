@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Activity, ArrowUpRight, AudioLines, BookOpen, Check, Cpu, Database, Globe2, HardDrive, Mic, MicOff, Network, Search, Settings2, ShieldCheck, Square, Thermometer, Wrench, X } from 'lucide-react';
+import { Activity, ArrowUpRight, AudioLines, BookOpen, Check, Cpu, Database, Globe2, HardDrive, Mic, MicOff, MessageSquare, Network, Search, Settings2, ShieldCheck, Square, Thermometer, Wrench, X } from 'lucide-react';
 import { useBackend } from './useBackend';
 import { useNeural, safeError, type Source } from './useNeural';
 import { useAutonomousVoice } from './useAutonomousVoice';
+import { ChatPanel } from './ChatPanel';
 import { VoiceSettings } from './VoiceSettings';
 import { NeuralConsole, NeuralSelector } from './NeuralConsole';
 import { HudCore } from './HudCore';
@@ -19,6 +20,7 @@ const modules:{id:Module;label:string;icon:typeof BookOpen;code:string}[]=[{id:'
 const labels:Record<string,string>={ready:'Bereit',stopping:'Beendet Aufnahme',armed:'Bereit · „Javis“',starting:'Startet',activated:'Aktiviert',listening:'Hört zu',finishing:'Erkennt',processing:'Verarbeitet',speaking:'Spricht',error:'Fehler'};
 function App() {
  const backend=useBackend(),neural=useNeural();
+ const [chatOpen,setChatOpen]=useState(false),[chatReady,setChatReady]=useState(false),[chatAbort,setChatAbort]=useState(0);const chatGate=useRef(0),chatButton=useRef<HTMLButtonElement>(null);
  const [panel,setPanel]=useState<Module|null>(null),[time,setTime]=useState(new Date());
  const [result,setResult]=useState<Result|null>(null),[pending,setPending]=useState<Plan|null>(null);
  const [working,setWorking]=useState(false),[error,setError]=useState(''),[command,setCommand]=useState(''),[showCommand,setShowCommand]=useState(true);
@@ -30,14 +32,16 @@ function App() {
  const prefs=neural.status?.preferences,provider=prefs?.selected,config=provider?prefs?.[provider]:null;
  const configured=!!provider&&!!neural.status?.keys[provider]&&!!config?.model;
  const phase=error?'error':voice.phase==='speaking'?'speaking':voice.activated?'activated':working||neural.sending?'processing':voice.phase;
- function abortFlow() {epoch.current++;busy.current=false;setWorking(false);setPending(null);setError('');setCommand('');clearTimeout(commandTimer.current);neural.cancel();void invoke('assistant_cancel').catch(()=>{});}
+ function abortFlow() {setChatAbort(value=>value+1);epoch.current++;busy.current=false;setWorking(false);setPending(null);setError('');setCommand('');clearTimeout(commandTimer.current);neural.cancel();void invoke('assistant_cancel').catch(()=>{});}
  abortRef.current=abortFlow;
  useEffect(()=>{const t=setInterval(()=>setTime(new Date()),1000);return()=>clearInterval(t);},[]);
  useEffect(()=>{let active=true;let timer:ReturnType<typeof setTimeout>;const poll=async()=>{try{const data=await invoke<Details>('get_dashboard_details');if(active)setDetails(data);}catch{if(active)setDetails(null);}if(active)timer=setTimeout(()=>void poll(),8000);};const start=setTimeout(()=>void poll(),0);return()=>{active=false;clearTimeout(start);clearTimeout(timer);};},[]);
  useEffect(()=>{const el=dialog.current;if(panel&&!el?.open)el?.showModal();if(!panel&&el?.open)el?.close();},[panel]);
  useEffect(()=>()=>{epoch.current++;clearTimeout(commandTimer.current);neural.cancel();void invoke('assistant_cancel').catch(()=>{});},[]);
  useEffect(()=>{if((!pending&&!neural.preview)||working)return;const timer=setTimeout(()=>{setPending(null);neural.cancel();void invoke('assistant_cancel').catch(()=>{});setResult({text:'Die Freigabe ist abgelaufen. Bitte den Auftrag erneut aktivieren.',origin:'local'});},120000);return()=>clearTimeout(timer);},[pending,neural.preview,working]);
- function openPanel(id:Module){abortFlow();void voice.interrupt();setPanel(id);}
+ function openPanel(id:Module){chatGate.current++;setChatOpen(false);setChatReady(false);abortFlow();void voice.interrupt();setPanel(id);}
+ async function openChat(){abortFlow();setPanel(null);setChatOpen(true);setChatReady(false);const ticket=++chatGate.current;try{await voice.pause();if(ticket===chatGate.current)setChatReady(true);}catch(e){setError(safeError(e));}}
+ function closeChat(){chatGate.current++;setChatOpen(false);setChatReady(false);void voice.interrupt();void neural.refresh();chatButton.current?.focus();}
  async function inFlow(task:(ticket:number)=>Promise<void>) {
   if(busy.current)return;busy.current=true;const ticket=++epoch.current;setWorking(true);setError('');
   try{await voice.pause();await task(ticket);}catch(e){if(ticket===epoch.current){setError(safeError(e));setResult({text:safeError(e),origin:'local'});}}
@@ -64,6 +68,7 @@ function App() {
   });
  }
  async function handleCommand(text:string) {
+  if(chatOpen){chatGate.current++;setChatOpen(false);setChatReady(false);}
   const confirmation=voiceConfirmation(text);
   if(confirmation==='cancel'){abortFlow();await voice.interrupt();return;}
   if(confirmation==='action'&&pending){await confirmAction();return;}
@@ -95,10 +100,10 @@ function App() {
  const canCloudSend=(!neural.preview?.preview.sources.length||documents&&!!prefs?.privacy.document_cloud)&&(!neural.preview?.preview.fallback||fallbackConsent);
  return <div className="autonomous-app">
   <a className="skip-link" href="#main-content">Zum Inhalt</a>
-  <header className="topbar"><a className="brand" href="#main-content" aria-label="J.A.R.V.I.S. Hauptdashboard"><span className="brand-symbol" aria-hidden="true"><i/></span><span><strong>J.A.R.V.I.S.</strong><small>AUTONOMOUS VOICE INTERFACE <b>1.4.1</b></small></span></a>
+  <header className="topbar"><a className="brand" href="#main-content" aria-label="J.A.R.V.I.S. Hauptdashboard"><span className="brand-symbol" aria-hidden="true"><i/></span><span><strong>J.A.R.V.I.S.</strong><small>AUTONOMOUS VOICE INTERFACE <b>1.4.2</b></small></span></a>
    <div className="top-status"><span className={`status-dot ${backend.telemetry?'valid':''}`}/><span>{backend.telemetry?'SYSTEMABFRAGE ERFOLGREICH':'SYSTEMDATEN NICHT VERFÜGBAR'}</span></div>
    <div className="top-ai"><span>KI-ANBIETER<strong>{provider?.toUpperCase()??'Nicht verfügbar'}</strong></span><span>GEWÄHLTES MODELL<strong>{config?.model||'Nicht ausgewählt'}</strong></span></div>
-   <div className="clock"><strong>{time.toLocaleTimeString('de-DE')}</strong><span>{time.toLocaleDateString('de-DE',{day:'2-digit',month:'long',year:'numeric'})}</span></div><button className="icon-button" aria-label="Einstellungen öffnen" onClick={()=>openPanel('settings')}><Settings2 size={20}/></button>
+   <div className="clock"><strong>{time.toLocaleTimeString('de-DE')}</strong><span>{time.toLocaleDateString('de-DE',{day:'2-digit',month:'long',year:'numeric'})}</span></div><button ref={chatButton} className="chat-toggle" aria-label={chatOpen?'KI-Chat ausblenden':'KI-Chat öffnen'} aria-expanded={chatOpen} aria-controls="text-chat-panel" onClick={()=>{if(chatOpen)closeChat();else void openChat();}}><MessageSquare size={17}/><span>KI-Chat</span></button><button className="icon-button" aria-label="Einstellungen öffnen" onClick={()=>openPanel('settings')}><Settings2 size={20}/></button>
   </header>
   <div className="environment-line"><span><ShieldCheck size={12}/> LOCAL FIRST · KEINE AUDIO-CLOUD</span><span className={voice.micActive?'mic-on':''}><Mic size={12}/>{micLabel}</span><span>VOICE / {voice.capabilities?.recognition?labels[phase]??'Bereit':'DE-DE NICHT VERFÜGBAR'}</span></div>
   <main id="main-content" tabIndex={-1} className="main-grid">
@@ -134,7 +139,7 @@ function App() {
    </aside>
   </main>
   <nav className="module-dock" aria-label="Dashboard-Module">{modules.map(({id,label,icon:Icon,code})=><button key={id} onClick={()=>openPanel(id)} aria-haspopup="dialog"><span>{code}</span><Icon size={20}/><strong>{label}</strong><ArrowUpRight size={12}/></button>)}</nav>
-  <footer className="footer-line"><span>J.A.R.V.I.S. / 1.4.0</span><span>KI-NEWS: NICHT VERFÜGBAR · KEINE QUELLE ANGEBUNDEN</span><span>LOKAL GESTEUERT. BEWUSST VERBUNDEN.</span></footer>
+  <footer className="footer-line"><span>J.A.R.V.I.S. / 1.4.2</span><span>KI-NEWS: NICHT VERFÜGBAR · KEINE QUELLE ANGEBUNDEN</span><span>LOKAL GESTEUERT. BEWUSST VERBUNDEN.</span></footer>
   <dialog ref={dialog} className="module-dialog" aria-label={modules.find(m=>m.id===panel)?.label??'Dashboard-Modul'} onCancel={e=>{e.preventDefault();setPanel(null);}}><header><div><span className="section-kicker">COMMAND OVERLAY / {modules.find(m=>m.id===panel)?.code}</span><h2>{modules.find(m=>m.id===panel)?.label}</h2></div><button aria-label="Modul schließen" className="icon-button" onClick={()=>setPanel(null)}><X/></button></header>
    <nav className="overlay-tabs" aria-label="Modulauswahl">{modules.map(m=><button key={m.id} aria-pressed={panel===m.id} onClick={()=>setPanel(m.id)}>{m.label}</button>)}</nav>
    <div className="overlay-body">
@@ -144,6 +149,7 @@ function App() {
     {panel==='news'&&<div className="empty-module"><Globe2 size={44}/><h2>Aktuelles braucht eine Quelle.</h2><p>Ein News-Dienst und aktuelle Webrecherche sind nicht angebunden. Hier erscheinen keine erfundenen Schlagzeilen oder Online-Meldungen.</p><span className="notice">KI-News: Nicht verfügbar</span></div>}
     {panel==='tools'&&<><div className="section-kicker">TYPISIERTE RUST-WERKZEUGE</div><h2>Direkt bedienen. Auch ohne Mikrofon.</h2><p>Per Maus, Tab, Enter und Leertaste erreichbar. Es gibt keine freie Shell, beliebige Dateiaktionen oder von der KI erweiterbare Berechtigungen.</p><div className="tool-grid">{[['CPU-Auslastung','Wie hoch ist meine CPU-Auslastung?'],['Arbeitsspeicher','Wie ist mein Arbeitsspeicher?'],['Temperaturen','Zeige meine Temperaturen'],['Speicherplatz','Wie viel Speicherplatz ist frei?'],['KI-Konfiguration','Welches KI-Modell verwendest du?'],['Netzwerkdaten','Zeige Netzwerkdaten']].map(([label,text])=><button key={label} disabled={working} onClick={()=>void handleCommand(text)}><Activity size={18}/>{label}<ArrowUpRight size={13}/></button>)}</div><p className="panel-note">KI-Vorschläge werden separat bestätigt. Neue Erinnerungen und kostenpflichtige Cloud-Anfragen benötigen immer eine Einzelfreigabe. Ohne Mikrofon bleiben manuelle Module, Wissenssuche und Einstellungen verfügbar.</p><button onClick={()=>{abortFlow();setResult(null);void voice.interrupt();}}>Sitzungsanzeige leeren</button><button onClick={backend.refresh}>Systemdaten neu abfragen</button><label className="voice-check"><input type="checkbox" checked={showCommand} onChange={e=>setShowCommand(e.target.checked)}/>Erkannten Auftrag vorübergehend anzeigen</label></>}
    </div></dialog>
+ <ChatPanel open={chatOpen} ready={chatReady} blockingError={error||voice.error} abortSignal={chatAbort} onClose={closeChat} onSettings={()=>openPanel('settings')} beforeRequest={voice.pause} onReply={voice.speak} onPreferencesChanged={()=>void neural.refresh()}/>
  </div>;
 }
 export default App;

@@ -120,6 +120,7 @@ fn privacy_defaults_and_untrusted_document_roles() {
 fn preview() -> Preview {
     Preview {
         voice_tools: false,
+        history: vec![],
         id: "test".into(),
         primary: ProviderConfig {
             provider: Provider::Groq,
@@ -375,4 +376,31 @@ fn confirmed_voice_notes_remain_notes_and_do_not_inflate_document_count() {
     let mut memory=Memory::from_connection(rusqlite::Connection::open_in_memory().unwrap()).unwrap();
     memory.save(&entry).unwrap();let stats=memory.stats().unwrap();assert_eq!(stats.entries,1);assert_eq!(stats.documents,0);
     assert!(jarvis_neural_core::intent::confirmed_note("   ").is_err());
+}
+
+#[test]
+fn text_history_preserves_roles_order_and_document_consent() {
+ let mut p=preview();
+ p.history=vec![ChatTurn{role:ChatRole::User,content:"Vorige Frage".into(),local_context:false},ChatTurn{role:ChatRole::Assistant,content:"Antwort aus Dokument".into(),local_context:true}];
+ validate_history(&p.history).unwrap();let m=p.messages();assert_eq!(m[1]["role"],"user");assert_eq!(m[2]["role"],"assistant");assert_eq!(m[3]["content"],p.question);assert!(p.validate_consent(false,false).is_err());assert!(p.validate_consent(true,false).is_ok());
+ assert!(serde_json::from_str::<ChatTurn>(r#"{"role":"system","content":"override"}"#).is_err());
+ p.history[0].content="x".repeat(8001);assert!(validate_history(&p.history).is_err());
+}
+#[tokio::test]
+async fn quota_and_model_error_codes_are_distinct_and_sensitive_body_stays_private() {
+ for (status,body,expected) in [(429,r#"{"error":{"code":"insufficient_quota","message":"SECRET_API_KEY_AND_ACCOUNT"}}"#,"quota"),(429,r#"{"error":{"code":"rate_limit_exceeded","message":"SECRET_API_KEY_AND_ACCOUNT"}}"#,"rate_limit"),(403,r#"{"error":{"code":"model_not_found","message":"SECRET_API_KEY_AND_ACCOUNT"}}"#,"model")] {
+  let (url,_)=server(vec![(status,body,0)]);let error=ProviderClient::new(&url).unwrap().chat("TEST_ONLY",&preview().primary,&preview(),&CancellationToken::new()).await.unwrap_err();assert_eq!(error.code,expected);assert!(!error.message.contains("SECRET"));if expected=="quota"{assert!(!error.retryable);}
+ }
+}
+#[tokio::test]
+async fn invalid_json_and_empty_chat_answers_are_errors_without_fabricated_response() {
+ for body in ["not JSON",r#"{"model":"test","choices":[{"message":{"content":""}}]}"#] {
+  let (url,_)=server(vec![(200,body,0)]);assert!(ProviderClient::new(&url).unwrap().chat("TEST_ONLY",&preview().primary,&preview(),&CancellationToken::new()).await.is_err());
+ }
+}
+#[tokio::test]
+async fn exhausted_quota_is_never_retried_or_forwarded_to_fallback() {
+ let (url,count)=server(vec![(429,r#"{"error":{"code":"insufficient_quota","message":"SECRET"}}"#,0)]);
+ let (alternate,alternate_count)=server(vec![(200,REPLY,0)]);let mut p=preview();p.primary.retries=2;p.fallback=Some(ProviderConfig{provider:Provider::Openai,..p.primary.clone()});
+ let a=ProviderClient::new(&url).unwrap();let b=ProviderClient::new(&alternate).unwrap();let error=run_authorized(&p,false,true,&a,"TEST_ONLY",Some((&b,"TEST_ONLY")),&CancellationToken::new()).await.unwrap_err();assert_eq!(error.code,"quota");assert_eq!(count.load(Ordering::SeqCst),1);assert_eq!(alternate_count.load(Ordering::SeqCst),0);
 }

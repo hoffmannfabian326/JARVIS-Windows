@@ -1,0 +1,185 @@
+name: Windows text chat restoration 1.4.2 verification and installer
+on:
+  push:
+    branches: [fix/restore-text-chat]
+    paths: [app/JARVIS/**, .github/workflows/windows-chat-1.4.2.yml]
+permissions:
+  contents: write
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/app/JARVIS/src-tauri/target
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: app/JARVIS
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Prepare native Windows MSVC
+        run: |
+          rustup toolchain install stable --profile minimal
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          rustup default stable
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          rustc -vV
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        id: native-cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            app/JARVIS/src-tauri/target
+          key: jarvis-chat-windows-${{ hashFiles('app/JARVIS/**/Cargo.lock') }}-v1
+      - name: Locked frontend dependencies
+        run: npm ci
+      - name: TypeScript verification
+        run: npm run check
+      - name: React production build
+        run: npm run build
+      - name: Telemetry and voice policy tests
+        run: npm test
+      - name: Chromium frontend regression tests
+        run: |
+          npx playwright install chromium
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          npm run test:ui
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Windows AudioCapture lifecycle contract without microphone
+        run: |
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/run-audio-capture-contract.ps1
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Native C sharp voice catalog JSON and real TTS rendering without loudspeaker
+        run: |
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/run-voice-catalog-contract.ps1
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Compile and probe installed Windows speech APIs without microphone
+        run: |
+          $output=& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/voice-host-probe.ps1
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $capability=$output | Where-Object {$_ -match '^\{'} | Select-Object -Last 1 | ConvertFrom-Json
+          if($null -eq $capability -or $capability.type -ne 'capabilities'){throw 'Speech probe failed'}
+          $capability | ConvertTo-Json -Depth 5 | Set-Content speech-capabilities.json -Encoding utf8NoBOM
+          Write-Output "System.Speech host compiled; Installed desktop voices: $($capability.voices.Count); German recognizer: $($capability.recognition). No microphone opened."
+      - name: Native SQLite provider RAG and intent tests
+        run: cargo test --release --manifest-path crates/neural-core/Cargo.toml --locked
+      - name: Native credentials device inventory and process cancellation tests
+        run: cargo test --release --manifest-path src-tauri/Cargo.toml --locked -- --include-ignored
+      - name: Build native Windows release application without installer
+        run: |
+          $config=(Resolve-Path src-tauri/tauri.test-installer.conf.json).Path
+          npm run tauri build -- --config "$config" --no-bundle --ci -- --locked
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            app/JARVIS/src-tauri/target
+          key: jarvis-chat-windows-${{ hashFiles('app/JARVIS/**/Cargo.lock') }}-v1
+      - name: Real Windows Tauri chat input IPC preview provider and blocked-network error
+        run: |
+          New-Item -ItemType Directory -Force release-output | Out-Null
+          Copy-Item src-tauri/voice -Destination src-tauri/target/release -Recurse -Force
+          $binary=(Resolve-Path src-tauri/target/release/jarvis-command-center.exe).Path
+          ./tests/windows-chat-smoke.ps1 -Binary $binary -OutputDirectory (Join-Path (Get-Location) 'release-output')
+          (Get-FileHash $binary -Algorithm SHA256).Hash.ToLower() | Set-Content release-output/TESTED_APP_SHA256.txt -Encoding utf8NoBOM
+      - name: Create test installer only after successful native application checks
+        run: |
+          $config=(Resolve-Path src-tauri/tauri.test-installer.conf.json).Path
+          npm run tauri bundle -- --config "$config" --bundles nsis --ci --no-binary-patching
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Verify installer architecture and voice payload
+        run: |
+          New-Item -ItemType Directory -Force release-output | Out-Null
+          $installers=@(Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe)
+          if($installers.Count -ne 1){throw 'Expected exactly one installer'}
+          $setup=Join-Path (Get-Location) 'release-output/JARVIS_1.4.2_Windows_x64_Test_Setup.exe'
+          Copy-Item $installers[0].FullName $setup
+          $sevenZip='C:\Program Files\7-Zip\7z.exe'
+          & $sevenZip t $setup
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $extract=Join-Path $env:RUNNER_TEMP 'jarvis142-installer-payload'
+          & $sevenZip x '-y' "-o$extract" $setup
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          foreach($name in @('VoiceHost.cs','AudioCapture.cs','VoiceCatalog.cs','launch.ps1')){
+            $payload=@(Get-ChildItem $extract -Recurse -File | Where-Object Name -eq $name)
+            if($payload.Count -ne 1){throw "Missing voice resource: $name"}
+            if((Get-FileHash $payload[0].FullName).Hash -ne (Get-FileHash "src-tauri/voice/$name").Hash){throw "Voice resource mismatch: $name"}
+          }
+          $binary=@(Get-ChildItem $extract -Recurse -Filter 'jarvis-command-center.exe')
+          if($binary.Count -ne 1){throw 'Missing app binary'}
+          if((Get-FileHash $binary[0].FullName -Algorithm SHA256).Hash.ToLower() -ne (Get-Content release-output/TESTED_APP_SHA256.txt).Trim()){throw 'Packaged app differs from verified app'}
+          $bytes=[IO.File]::ReadAllBytes($binary[0].FullName)
+          $pe=[BitConverter]::ToInt32($bytes,0x3c)
+          if([BitConverter]::ToUInt16($bytes,$pe+4) -ne 0x8664){throw 'App is not x64'}
+      - name: Native installation application execution and uninstallation smoke
+        run: |
+          $setup=(Resolve-Path release-output/JARVIS_1.4.2_Windows_x64_Test_Setup.exe).Path
+          ./tests/windows-installed-smoke.ps1 -Installer $setup -OutputDirectory (Join-Path (Get-Location) 'release-output')
+      - name: Prepare source and traceable verification report
+        run: |
+          Compress-Archive -Path release-output/JARVIS_1.4.2_Windows_x64_Test_Setup.exe -DestinationPath release-output/JARVIS_1.4.2_Windows_x64_Test.zip
+          $source=Join-Path (Get-Location) 'release-output/JARVIS_1.4.2_Chat_Source.zip'
+          git archive --format=zip --prefix=JARVIS_1.4.2/ --output="$source" HEAD:app/JARVIS
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          Copy-Item docs/CHAT_REPARATUR_1.4.2.md release-output/
+          Copy-Item speech-capabilities.json release-output/
+          $runtime=Get-Content release-output/WINDOWS_RUNTIME_SMOKE.json | ConvertFrom-Json
+          $chat=Get-Content release-output/WINDOWS_CHAT_SMOKE.json | ConvertFrom-Json
+          $sourceHash=(Get-FileHash $source -Algorithm SHA256).Hash.ToLower()
+          @"
+          # J.A.R.V.I.S. 1.4.2-beta.1 – KI-Textchat / Windows-Testbuild
+
+          Branch: fix/restore-text-chat. Standardbranch unverändert.
+          Ursache: Textformular/Chatliste wurden in 1.4 bewusst aus dem Layout entfernt; bestehende KI-Befehle blieben. Jetzt optionaler Drawer mit bestehenden ai_prepare/ai_send/ai_cancel und gleicher Provider-/Modellauswahl.
+          Details, Dateiliste, Datenschutz, Rücknahme und Praxistest: CHAT_REPARATUR_1.4.2.md.
+
+          ## Tatsächlich ausgeführt
+          TypeScript-Typprüfung, React-Produktionsbuild, neun Node-Tests, 38 Browser-Regressionen und 27 Core-Tests erfolgreich. Core-Testserver prüfen HTTP-Antworten, Quota-/Modell-/Netzwerkfehler, Geheimnisredaktion, Abbruch und Dokumentkontext/Freigaben; keine Produktiv-API-Antworten.
+          Zwölf native Backend-Tests, C#-Sprachkatalog und AudioCapture-Vertrag erfolgreich. Echte Sprache nur technisch mit Null-Ausgabe, keine hörbare/mikrofonbasierte Abnahme.
+          Native Windows-Umgebung: $($runtime.os), MSVC x86_64-pc-windows-msvc.
+
+          ## Echte Windows-Anwendung vor der Installererstellung
+          Reale Tauri-IPC: $($chat.tauri_ipc)
+          Texteingabe: $($chat.text_input)
+          Vorschau vom Rust-Backend mit OpenAI/gpt-4.1-mini: $($chat.core_preview)
+          Anbieterwechsel im tatsächlichen UI: $($chat.provider_switch)
+          Tatsächlicher Netzwerkfehler nach bestätigtem Senden bei gesperrtem App-Netzwerk: $($chat.network_error)
+          Bestehendes Voice-Panel, keine Mikrofonfreigabe: $($chat.voice_panel)
+          Temporärer lokaler Testwert aus Credential Manager entfernt: $($chat.dummy_key_deleted)
+          Native Tests ersetzten keine Tauri-Schnittstelle und keinen Providerclient. CDP nur für den Testprozess, nicht für ausgelieferte App aktiviert.
+          Keine echten API-Schlüssel verwendet oder hochgeladen; kein Dummy-Schlüssel wurde zur Cloud gesendet. Reale authentifizierte Providerantwort: NICHT VERIFIZIERT.
+
+          ## Installer und Integrität
+          Installer erst nach erfolgreichen Anwendungsprüfungen erstellt. NSIS-Inhalt geprüft; x64-App und vier Voice-Ressourcen bestätigt.
+          Die eingebettete App ist bytegleich mit der nativ geprüften exe (TESTED_APP_SHA256.txt).
+          Installation: $($runtime.installed); Fenster: $($runtime.window_created); HUD: $($runtime.hud_rendered).
+          Mikrofon standardmäßig aus: $($runtime.microphone_default_off); reguläres Schließen: $($runtime.graceful_close); Deinstallation: $($runtime.uninstalled).
+          Lokaler CPU-Aktionsnachweis per UI Automation: $($runtime.local_cpu_tool). Hinweise: $($runtime.notes -join ' ')
+          Fehlender UI-Automation-Nachweis gilt ausdrücklich als NICHT VERIFIZIERT.
+
+          ## Offen
+          Keine sicher zugänglichen OpenAI-/Groq-Zugangsdaten in dieser Umgebung; Windows-Credential-Manager des Nutzerrechners nicht erreichbar. Erfolgreiche authentifizierte Chat-Anfrage mit dessen Konto und gpt-4.1-mini ist NICHT VERIFIZIERT und muss im neuen Chat bestätigt werden.
+          Windows 10/11 auf Nutzerhardware, hörbare Stimme, Mikrofon/Wake-Word/Echo sowie reales Konto/Guthaben NICHT VERIFIZIERT. Server-Tests ersetzen diese Abnahme nicht.
+          Installer unsigniert. Bestehende Cloud-Freigaben und mögliche API-Kosten gelten weiter.
+
+          Commit: $env:GITHUB_SHA
+          Source SHA-256: $sourceHash
+          Build: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID
+          "@ | Set-Content release-output/BUILD_REPORT_1.4.2.md -Encoding utf8NoBOM
+          Get-ChildItem release-output -File | Where-Object Name -ne 'SHA256SUMS.txt' | ForEach-Object {"$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"} | Set-Content release-output/SHA256SUMS.txt -Encoding utf8NoBOM
+      - name: Publish private test prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets=@(Get-ChildItem release-output -File | ForEach-Object FullName)
+          gh release create v1.4.2-beta.1 @assets --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --title 'J.A.R.V.I.S. 1.4.2 – KI-Chat wiederhergestellt · Testbuild' --prerelease --notes-file release-output/BUILD_REPORT_1.4.2.md
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}

@@ -6,7 +6,8 @@ export type Privacy = { memory_enabled: boolean; persist_chats: boolean; documen
 export type Preferences = { privacy: Privacy; openai: ProviderConfig; groq: ProviderConfig; selected: Provider };
 export type MemoryEntry = { id: number; title: string; body: string; category: string; source: string; metadata: Record<string,string>; updated: string };
 export type Source = { label: string; entry_id: number; title: string; source: string; start_char: number; end_char: number; text: string; updated: string; metadata?:Record<string,string> };
-export type Preview = { utterance?:string; preview: { id: string; primary: ProviderConfig; fallback: ProviderConfig | null; question: string; sources: Source[] }; messages: {role:string;content:string}[] };
+export type ChatTurn = {role:'user'|'assistant';content:string;local_context:boolean};
+export type Preview = { utterance?:string; preview: { id: string; primary: ProviderConfig; fallback: ProviderConfig | null; question: string; sources: Source[]; history?:ChatTurn[]; voice_tools?:boolean }; messages: {role:string;content:string}[] };
 export type AiReply = {text:string;provider:Provider;model:string;sources:Source[];fallback_used:boolean;storage_warning?:string|null};
 export type NeuralStatus = { preferences: Preferences; keys: Record<Provider,boolean>; vault_available:boolean; stats: {entries:number;documents:number;chunks:number;database_bytes:number;chats:number} };
 export const safeError = (reason: unknown) => typeof reason === 'string' ? reason : reason && typeof reason === 'object' && 'message' in reason ? String(reason.message) : 'Lokale Operation fehlgeschlagen.';
@@ -23,10 +24,10 @@ export function useNeural() {
   async function refresh(){try{setStatus(await invoke<NeuralStatus>('neural_status'));setError('');}catch(e){setError(safeError(e));}}
   useEffect(()=>{const timer=setTimeout(()=>void refresh(),0);return()=>{clearTimeout(timer);epoch.current++;if(pending.current)void invoke('ai_cancel',{requestId:pending.current}).catch(()=>{});};},[]);
   async function settings(preferences:Preferences){cancel();await invoke('neural_settings',{preferences});setPreview(null);await refresh();}
-  async function prepare(question:string){
-    if(!status)return;const current=++epoch.current;setPreparing(true);setError('');setPreview(null);
-    try{const result=await invoke<Preview>('ai_prepare',{request:{question,provider:status.preferences.selected,use_knowledge:useKnowledge,fallback:fallback||null}});if(current===epoch.current){pending.current=result.preview.id;setPreview(result);}else void invoke('ai_cancel',{requestId:result.preview.id});}
-    catch(e){if(current===epoch.current)setError(safeError(e));}finally{if(current===epoch.current)setPreparing(false);}
+  async function prepare(question:string,history:ChatTurn[]=[]):Promise<Preview|null>{
+    if(!status)return null;cancel();const current=++epoch.current;setPreparing(true);setError('');setPreview(null);
+    try{const result=await invoke<Preview>('ai_prepare',{request:{question,provider:status.preferences.selected,use_knowledge:useKnowledge,fallback:fallback||null,history}});if(current===epoch.current){pending.current=result.preview.id;setPreview(result);return result;}else void invoke('ai_cancel',{requestId:result.preview.id});}
+    catch(e){if(current===epoch.current)setError(safeError(e));}finally{if(current===epoch.current)setPreparing(false);}return null;
   }
   async function prepareVoice(planId:string):Promise<Preview|null>{
     if(!status)return null;cancel();const current=++epoch.current;setPreparing(true);setError('');

@@ -203,6 +203,7 @@ pub fn assistant_cloud_prepare(
     let preview = neural::prepare_voice(
         &neural,
         Prepare {
+            history: vec![],
             question,
             provider,
             use_knowledge,

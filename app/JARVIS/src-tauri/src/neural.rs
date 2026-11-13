@@ -259,6 +259,7 @@ pub async fn ai_test(
     }
     let preview = Preview {
         voice_tools: false,
+        history: vec![],
         id: String::new(),
         primary: config.clone(),
         fallback: None,
@@ -276,6 +277,7 @@ pub struct Prepare {
     pub provider: Provider,
     pub use_knowledge: bool,
     pub fallback: Option<Provider>,
+    #[serde(default)] pub history: Vec<ChatTurn>,
 }
 #[tauri::command]
 pub async fn ai_prepare(app: tauri::AppHandle, request: Prepare) -> Result<serde_json::Value> {
@@ -285,6 +287,7 @@ fn prepare_impl(state: &NeuralState, request: Prepare) -> Result<serde_json::Val
     if request.question.trim().is_empty() || request.question.chars().count() > 8000 {
         return Err("Frage muss 1 bis 8.000 Zeichen enthalten.".into());
     }
+    validate_history(&request.history)?;
     let prefs = state.prefs()?;
     let primary = prefs.config(request.provider);
     primary.validate()?;
@@ -302,6 +305,7 @@ fn prepare_impl(state: &NeuralState, request: Prepare) -> Result<serde_json::Val
     };
     let preview = Preview {
         voice_tools: false,
+        history: request.history,
         id: uuid::Uuid::new_v4().to_string(),
         primary,
         fallback,
@@ -372,7 +376,7 @@ async fn send_impl(state:tauri::State<'_,NeuralState>,request_id:String,document
         id: request_id.clone(),
     };
     let prefs = state.prefs().map_err(|s| AiError::safe(&s))?;
-    if !preview.sources.is_empty()
+    if preview.has_document_content()
         && (!prefs.privacy.document_cloud || !prefs.privacy.memory_enabled)
     {
         return Err(AiError::safe(
@@ -450,6 +454,7 @@ pub async fn legacy_groq(state: &NeuralState, message: String) -> Result<String>
     let secret = key(Provider::Groq)?;
     let preview = Preview {
         voice_tools: false,
+        history: vec![],
         id: String::new(),
         primary: config.clone(),
         fallback: None,

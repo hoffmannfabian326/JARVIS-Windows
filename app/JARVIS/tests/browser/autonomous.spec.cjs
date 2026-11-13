@@ -3,7 +3,7 @@ const {install,grant,utterance,source}=require('./fixture.cjs');
 const calls=(page,name)=>page.evaluate(name=>window.__test.calls.filter(c=>c.command===name),name);
 async function ready(page){await expect(page.getByText('TEST CPU',{exact:true})).toBeVisible();}
 async function wakeReady(page){await expect.poll(()=>page.evaluate(()=>window.__test.session?.state)).toBe('armed');}
-test('real browser fallback: no classic chat, fabricated measurements or online/news claims',async({page})=>{
+test('browser fallback: chat stays closed and no measurements or online/news claims are fabricated',async({page})=>{
  const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('/');await expect(page.getByText('SYSTEMDATEN NICHT VERFÜGBAR')).toBeVisible();
  await expect(page.locator('main textarea,main input[type=text],.chat-log,.bubble,[role=log]')).toHaveCount(0);
  const metrics=await page.locator('.metric-number').allTextContents();expect(metrics).toEqual(['Nicht verfügbar','Nicht verfügbar','Nicht verfügbar']);

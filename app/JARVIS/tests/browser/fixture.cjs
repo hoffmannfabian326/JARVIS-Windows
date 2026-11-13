@@ -1,10 +1,10 @@
 // IPC boundary fixtures ONLY. Never loaded by the application. No real audio/cloud/keys.
 exports.install = async(page,options={})=>{
  await page.addInitScript((options)=>{
-  const config=p=>({provider:p,model:`TEST-${p}`,timeout_seconds:45,retries:0});
+  const config=p=>({provider:p,model:p==='openai'&&options.coreModel?options.coreModel:`TEST-${p}`,timeout_seconds:45,retries:0});
   const t=window.__test={calls:[],allow:false,wake:false,epoch:0,session:null,next:0,plans:{},entries:[],delay:options.delay||0,ttsManual:false,failStart:false,cloudDelay:0,cloudFinished:false,actualSends:0,
    voices:options.voices||null,devices:{devices:options.noMic?[]:[{id:'0:TEST Mic A',name:'TEST Mic A'},{id:'1:TEST Mic B',name:'TEST Mic B'}],default_id:'0:TEST Mic A'},
-   prefs:{selected:'groq',groq:config('groq'),openai:config('openai'),privacy:{memory_enabled:true,persist_chats:true,document_cloud:!!options.documentCloud}},keys:{openai:true,groq:true},
+   prefs:{selected:options.selected||'groq',groq:config('groq'),openai:config('openai'),privacy:{memory_enabled:true,persist_chats:true,document_cloud:!!options.documentCloud}},keys:{openai:!options.noKeys,groq:!options.noKeys},
    reply:{text:'{"type":"answer","text":"TEST Antwort <b>bleibt Text</b>"}',provider:'groq',model:'TEST-actually-used',sources:[],fallback_used:false},sources:[],preview:null};
   const invoke=async(command,args={})=>{
    t.calls.push({command,args});
@@ -51,22 +51,26 @@ exports.install = async(page,options={})=>{
     if(p.action.kind==='remember')t.entries.push({id:1,title:'TEST Notiz',body:p.action.text,metadata:{},source:'',category:'Wissen',updated:'TEST timestamp'});
     return{text:p.action.kind==='hardware'?'TEST CPU: 0 Prozent':p.action.kind==='search_knowledge'?'TEST lokales Wissen':'TEST Aktion ausgeführt',action:p.action,sources:[],origin:'local'};
    }
+   if(command==='ai_prepare'){
+    t.preview={id:`text-${++t.next}`,voice_tools:false,history:structuredClone(args.request.history||[]),question:args.request.question,primary:t.prefs[args.request.provider],fallback:args.request.fallback?t.prefs[args.request.fallback]:null,sources:args.request.use_knowledge?t.sources:[]};
+    const result={preview:t.preview,messages:[{role:'system',content:'TEST text contract'},...t.preview.history.map(m=>({role:m.role,content:m.content})),{role:'user',content:t.preview.question}]};if(t.prepareDelay)await new Promise(r=>setTimeout(r,t.prepareDelay));return result;
+   }
    if(command==='assistant_cloud_prepare'){
     const p=t.plans[args.planId];delete t.plans[args.planId];if(!p)throw 'TEST: missing cloud plan';
     t.preview={id:`preview-${++t.next}`,question:p.action.question,primary:t.prefs[args.provider],fallback:args.fallback?t.prefs[args.fallback]:null,sources:args.useKnowledge?t.sources:[]};
     return{preview:t.preview,messages:[{role:'system',content:'TEST closed tool contract'},{role:'user',content:p.action.question},...t.preview.sources.map(s=>({role:'user',content:s.text}))]};
    }
-   if(command==='assistant_cloud_send'){
-    if(!args.confirmed)throw 'TEST cloud consent missing';if(t.preview.sources.length&&(!args.documentConsent||!t.prefs.privacy.document_cloud))throw 'TEST document consent missing';if(t.preview.fallback&&!args.fallbackConsent)throw 'TEST fallback consent missing';
+   if(command==='assistant_cloud_send'||command==='ai_send'){
+    if(command==='assistant_cloud_send'&&!args.confirmed)throw 'TEST cloud consent missing';if((t.preview.sources.length||t.preview.history?.some(m=>m.local_context))&&(!args.documentConsent||!t.prefs.privacy.document_cloud))throw 'TEST document consent missing';if(t.preview.fallback&&!args.fallbackConsent)throw 'TEST fallback consent missing';
     const activePreview=t.preview;t.actualSends++;if(t.cloudDelay)await new Promise(r=>setTimeout(r,t.cloudDelay));t.cloudFinished=true;
-    if(t.cloudError)throw{message:t.cloudError};return{...t.reply,provider:activePreview.primary.provider,sources:activePreview.sources};
+    if(command==='ai_send'&&t.textError)throw t.textError;if(t.cloudError)throw{message:t.cloudError};return{...t.reply,text:command==='ai_send'?'TEST Textantwort <b>bleibt Text</b>':t.reply.text,provider:activePreview.primary.provider,sources:activePreview.sources};
    }
    if(command==='assistant_model_response'){
     const r=JSON.parse(args.text);if(r.type==='answer')return{text:r.text,plan:null};
     if(r.action.kind==='shell')throw 'TEST: Werkzeugvorschlag nicht erlaubt';
     const p={id:`model-${++t.next}`,action:r.action,summary:'TEST KI-Aktion',confirmation:true,origin:'model'};t.plans[p.id]=p;return{text:'TEST KI-Vorschlag',plan:p};
    }
-   if(command==='ai_cancel'){t.cancelled=true;t.preview=null;return;}
+   if(command==='ai_cancel'){t.cancelled=true;if(t.preview?.id===args.requestId)t.preview=null;return;}
    if(command==='memory_list')return t.entries;
    if(command==='memory_save'){const e={...args.entry,id:args.entry.id||t.entries.length+1,updated:'TEST time'};t.entries=t.entries.filter(x=>x.id!==e.id).concat(e);return e.id;}
    if(command==='document_import'){t.entries.push({id:1,title:args.name,source:args.name,body:'TEST document',category:args.category,metadata:args.metadata,updated:'TEST time'});return 1;}
