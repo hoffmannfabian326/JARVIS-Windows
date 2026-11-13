@@ -79,8 +79,15 @@ Antwortverarbeitung und Fehlercodes lokal, ohne Produktivkonten. Der neue Öffnu
 Regressionstest schlug am ursprünglichen 1.4.1-Stand wegen fehlendem Chat-Schalter fehl.
 
 Windows-Test: reale Release-Anwendung mit WebView2, keine ersetzte Tauri-Grenze.
-CDP/Debug-Port wird ausschließlich per Umgebungsvariable für den isolierten CI-
-Testprozess eingeschaltet, nicht im Produkt oder Installer. Ein temporärer,
+Die ersten beiden CDP-Versuche mit Umgebungsvariablen konnten keinen Debug-Port
+der normalen Release-App öffnen. App und sechs WebView2-Prozesse liefen; ein
+Absturz ist damit nicht belegt. Beide Läufe endeten vor der Installererstellung
+(43448040302, 43451426727). Deshalb wird die echte Windows-App für den tiefen
+GUI-Test separat mit `tauri/devtools` und `tauri.windows-ci-chat.conf.json` gebaut.
+Danach wird das Produktionsprogramm ohne Testkonfiguration/Devtools neu gebaut.
+Der GUI-Test und der ausgelieferte Build sind also nicht bytegleich; die finale
+Produktionsversion wird separat über Installation/Start/HUD/Deinstallation geprüft.
+Debug-Port und zusätzliche Debugrechte werden nicht im Installer ausgeliefert. Ein temporärer,
 ausdrücklich ungültiger Testwert wird über das echte Backend im Credential Manager
 gespeichert und wieder gelöscht. Nur mit verifizierter ausgehender Firewall-Sperre
 für genau diese exe darf die Anfrage ausgelöst werden. Es wird kein Dummy-Schlüssel

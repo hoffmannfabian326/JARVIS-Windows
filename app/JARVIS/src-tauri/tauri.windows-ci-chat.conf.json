@@ -1,0 +1,16 @@
+{
+  "app": {
+    "windows": [{
+      "label": "main",
+      "title": "J.A.R.V.I.S. 1.4.2 – CI UI verification",
+      "width": 1480,
+      "height": 900,
+      "minWidth": 720,
+      "minHeight": 560,
+      "backgroundColor": "#080d13",
+      "devtools": true,
+      "additionalBrowserArgs": "--remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 --force-renderer-accessibility"
+    }]
+  },
+  "bundle": { "active": false }
+}

@@ -84,17 +84,29 @@ jobs:
             ~/.cargo/git
             app/JARVIS/src-tauri/target
           key: jarvis-chat-windows-${{ hashFiles('app/JARVIS/**/Cargo.lock') }}-v1
+      - name: Build isolated CI UI variant with explicit WebView2 debugging
+        run: |
+          $config=(Resolve-Path src-tauri/tauri.windows-ci-chat.conf.json).Path
+          npm run tauri build -- --config "$config" --features tauri/devtools --no-bundle --ci -- --locked
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
       - name: Real Windows Tauri chat input IPC preview provider and blocked-network error
         run: |
           New-Item -ItemType Directory -Force release-output | Out-Null
           Copy-Item src-tauri/voice -Destination src-tauri/target/release -Recurse -Force
           $binary=(Resolve-Path src-tauri/target/release/jarvis-command-center.exe).Path
           ./tests/windows-chat-smoke.ps1 -Binary $binary -OutputDirectory (Join-Path (Get-Location) 'release-output')
-          (Get-FileHash $binary -Algorithm SHA256).Hash.ToLower() | Set-Content release-output/TESTED_APP_SHA256.txt -Encoding utf8NoBOM
+
       - name: Safe native UI diagnostic on failure
         if: failure()
         run: |
           if(Test-Path release-output/WINDOWS_CHAT_SMOKE.json){Get-Content release-output/WINDOWS_CHAT_SMOKE.json}
+      - name: Rebuild production application without debugger or CI options
+        run: |
+          $config=(Resolve-Path src-tauri/tauri.test-installer.conf.json).Path
+          npm run tauri build -- --config "$config" --no-bundle --ci -- --locked
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $binary=(Resolve-Path src-tauri/target/release/jarvis-command-center.exe).Path
+          (Get-FileHash $binary -Algorithm SHA256).Hash.ToLower() | Set-Content release-output/PRODUCTION_APP_SHA256.txt -Encoding utf8NoBOM
       - name: Create test installer only after successful native application checks
         run: |
           $config=(Resolve-Path src-tauri/tauri.test-installer.conf.json).Path
@@ -120,7 +132,7 @@ jobs:
           }
           $binary=@(Get-ChildItem $extract -Recurse -Filter 'jarvis-command-center.exe')
           if($binary.Count -ne 1){throw 'Missing app binary'}
-          if((Get-FileHash $binary[0].FullName -Algorithm SHA256).Hash.ToLower() -ne (Get-Content release-output/TESTED_APP_SHA256.txt).Trim()){throw 'Packaged app differs from verified app'}
+          if((Get-FileHash $binary[0].FullName -Algorithm SHA256).Hash.ToLower() -ne (Get-Content release-output/PRODUCTION_APP_SHA256.txt).Trim()){throw 'Packaged app differs from production build'}
           $bytes=[IO.File]::ReadAllBytes($binary[0].FullName)
           $pe=[BitConverter]::ToInt32($bytes,0x3c)
           if([BitConverter]::ToUInt16($bytes,$pe+4) -ne 0x8664){throw 'App is not x64'}
@@ -159,16 +171,21 @@ jobs:
           Tatsächlicher Netzwerkfehler nach bestätigtem Senden bei gesperrtem App-Netzwerk: $($chat.network_error)
           Bestehendes Voice-Panel, keine Mikrofonfreigabe: $($chat.voice_panel)
           Temporärer lokaler Testwert aus Credential Manager entfernt: $($chat.dummy_key_deleted)
-          Native Tests ersetzten keine Tauri-Schnittstelle und keinen Providerclient. CDP nur für den Testprozess, nicht für ausgelieferte App aktiviert.
+          Native Tests ersetzten keine Tauri-Schnittstelle und keinen Providerclient. GUI-Testvariante enthält ausschließlich für CI aktivierte Devtools/Debug-Port-Optionen. Anschließend wurde die Produktionsversion ohne diese Optionen neu gebaut; sie ist nicht bytegleich mit der Debugger-Testvariante.
           Keine echten API-Schlüssel verwendet oder hochgeladen; kein Dummy-Schlüssel wurde zur Cloud gesendet. Reale authentifizierte Providerantwort: NICHT VERIFIZIERT.
 
           ## Installer und Integrität
           Installer erst nach erfolgreichen Anwendungsprüfungen erstellt. NSIS-Inhalt geprüft; x64-App und vier Voice-Ressourcen bestätigt.
-          Die eingebettete App ist bytegleich mit der nativ geprüften exe (TESTED_APP_SHA256.txt).
+          Die eingebettete App ist bytegleich mit dem abschließend neu gebauten Produktionsprogramm ohne Devtools (PRODUCTION_APP_SHA256.txt). Installations-/Start-/HUD-Prüfung betrifft diese ausgelieferte Version; tiefer GUI-Chat-Test betrifft die separate CI-Debugger-Variante.
           Installation: $($runtime.installed); Fenster: $($runtime.window_created); HUD: $($runtime.hud_rendered).
           Mikrofon standardmäßig aus: $($runtime.microphone_default_off); reguläres Schließen: $($runtime.graceful_close); Deinstallation: $($runtime.uninstalled).
           Lokaler CPU-Aktionsnachweis per UI Automation: $($runtime.local_cpu_tool). Hinweise: $($runtime.notes -join ' ')
           Fehlender UI-Automation-Nachweis gilt ausdrücklich als NICHT VERIFIZIERT.
+
+          ## Fehlgeschlagene Vorversuche
+          Die beiden ersten nativen GUI-Versuche konnten nicht am Debug-Port der normalen Release-App ansetzen. Im zweiten Versuch lebten App und WebView2-Prozesse, aber kein Debug-Endpunkt wurde geöffnet. Die Testausführung wurde gestoppt, bevor ein Installer entstand.
+          Nachweise: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/43448040302 und https://github.com/$env:GITHUB_REPOSITORY/actions/runs/43451426727
+          Behebung ausschließlich im Testaufbau: explizite CI-Konfiguration und tauri/devtools beim GUI-Test, danach Produktions-Neubau ohne diese Optionen. Der Produkt-Chatcode blieb unverändert.
 
           ## Offen
           Keine sicher zugänglichen OpenAI-/Groq-Zugangsdaten in dieser Umgebung; Windows-Credential-Manager des Nutzerrechners nicht erreichbar. Erfolgreiche authentifizierte Chat-Anfrage mit dessen Konto und gpt-4.1-mini ist NICHT VERIFIZIERT und muss im neuen Chat bestätigt werden.
