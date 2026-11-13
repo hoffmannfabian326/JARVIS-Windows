@@ -1,0 +1,35 @@
+name: Voice 1.4.1 native hidden host diagnosis
+on:
+  push:
+    branches: [release/v1.4.1-beta.1]
+    paths: [.github/workflows/voice-1.4.1-diagnosis.yml]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - shell: pwsh
+        run: |
+          Expand-Archive source-downloads/JARVIS_1.4.0_Voice_Test_Source.zip -DestinationPath baseline
+          $source=(Resolve-Path baseline/JARVIS_1.4.0/src-tauri/voice/VoiceHost.cs).Path
+          $script=(Resolve-Path baseline/JARVIS_1.4.0/src-tauri/voice/launch.ps1).Path
+          foreach($hidden in @($false,$true)){
+            $p=[Diagnostics.Process]::new()
+            $p.StartInfo.FileName="$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+            $p.StartInfo.Arguments="-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$script`" -Source `"$source`""
+            $p.StartInfo.UseShellExecute=$false;$p.StartInfo.CreateNoWindow=$hidden
+            $p.StartInfo.RedirectStandardInput=$true;$p.StartInfo.RedirectStandardOutput=$true;$p.StartInfo.RedirectStandardError=$true
+            $null=$p.Start();$stdout=$p.StandardOutput.ReadToEndAsync();$stderr=$p.StandardError.ReadToEndAsync()
+            $bytes=[Text.Encoding]::UTF8.GetBytes('{"mode":"probe"}'+"`n")
+            $p.StandardInput.BaseStream.Write($bytes,0,$bytes.Length);$p.StandardInput.BaseStream.Flush();$p.StandardInput.Close()
+            if(-not $p.WaitForExit(30000)){$p.Kill();throw 'Host timed out'}
+            Write-Output "CreateNoWindow=$hidden Exit=$($p.ExitCode)"
+            Write-Output "stdout=$($stdout.Result)"
+            Write-Output "stderr=$($stderr.Result)"
+            $p.Dispose()
+          }
