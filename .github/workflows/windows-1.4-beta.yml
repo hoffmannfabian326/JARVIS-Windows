@@ -1,0 +1,147 @@
+name: Windows x64 voice acceptance 1.4 test installer
+on:
+  push:
+    branches: [release/v1.4.0-beta.1]
+permissions:
+  contents: write
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: build-source/JARVIS_1.4.0
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify and unpack reviewed source
+        working-directory: .
+        run: |
+          $archive='source-downloads/JARVIS_1.4.0_Voice_Test_Source.zip'
+          if((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne '2b94cca02280fc912b5434822c4d212de59ff7cf6c872a7fa0dde87b0fc302c6'){throw 'Source checksum mismatch'}
+          Expand-Archive $archive -DestinationPath build-source
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Prepare native Windows MSVC
+        run: |
+          rustup toolchain install stable --profile minimal
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          rustup default stable
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          rustc -vV
+      - name: Locked frontend dependencies
+        run: npm ci
+      - name: TypeScript verification
+        run: npm run check
+      - name: React production build
+        run: npm run build
+      - name: Telemetry and voice policy tests
+        run: npm test
+      - name: Windows AudioCapture lifecycle contract without microphone
+        run: |
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/run-audio-capture-contract.ps1
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Compile and probe installed Windows speech APIs without microphone
+        run: |
+          $output=& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/voice-host-probe.ps1
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $capability=$output | Where-Object {$_ -match '^\{'} | Select-Object -Last 1 | ConvertFrom-Json
+          if($null -eq $capability -or $capability.type -ne 'capabilities'){throw 'Speech probe failed'}
+          $capability | ConvertTo-Json -Depth 5 | Set-Content speech-capabilities.json -Encoding utf8NoBOM
+          Write-Output "System.Speech host compiled; German voices: $($capability.voices.Count); German recognizer: $($capability.recognition). No microphone opened."
+      - name: Native SQLite provider RAG and intent tests
+        run: cargo test --release --manifest-path crates/neural-core/Cargo.toml --locked
+      - name: Native credentials device inventory and process cancellation tests
+        run: cargo test --release --manifest-path src-tauri/Cargo.toml --locked -- --include-ignored
+      - name: Build authorized native x64 NSIS test installer
+        run: |
+          $config=(Resolve-Path src-tauri/tauri.test-installer.conf.json).Path
+          npm run tauri build -- --config "$config" --ci -- --locked
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Verify installer architecture and voice payload
+        run: |
+          New-Item -ItemType Directory -Force release-output | Out-Null
+          $installers=@(Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe)
+          if($installers.Count -ne 1){throw 'Expected exactly one installer'}
+          $setup=Join-Path (Get-Location) 'release-output/JARVIS_1.4.0_Windows_x64_Test_Setup.exe'
+          Copy-Item $installers[0].FullName $setup
+          $sevenZip='C:\Program Files\7-Zip\7z.exe'
+          & $sevenZip t $setup
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          $extract=Join-Path $env:RUNNER_TEMP 'jarvis14-installer-payload'
+          & $sevenZip x '-y' "-o$extract" $setup
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          foreach($name in @('VoiceHost.cs','AudioCapture.cs','launch.ps1')){
+            $payload=@(Get-ChildItem $extract -Recurse -File | Where-Object Name -eq $name)
+            if($payload.Count -ne 1){throw "Missing voice resource: $name"}
+            if((Get-FileHash $payload[0].FullName).Hash -ne (Get-FileHash "src-tauri/voice/$name").Hash){throw "Voice resource mismatch: $name"}
+          }
+          $binary=@(Get-ChildItem $extract -Recurse -Filter 'jarvis-command-center.exe')
+          if($binary.Count -ne 1){throw 'Missing app binary'}
+          $bytes=[IO.File]::ReadAllBytes($binary[0].FullName)
+          $pe=[BitConverter]::ToInt32($bytes,0x3c)
+          if([BitConverter]::ToUInt16($bytes,$pe+4) -ne 0x8664){throw 'App is not x64'}
+      - name: Native installation application execution and uninstallation smoke
+        run: |
+          $setup=(Resolve-Path release-output/JARVIS_1.4.0_Windows_x64_Test_Setup.exe).Path
+          ./tests/windows-installed-smoke.ps1 -Installer $setup -OutputDirectory (Join-Path (Get-Location) 'release-output')
+      - name: Prepare honest acceptance report and delivery
+        run: |
+          Compress-Archive -Path release-output/JARVIS_1.4.0_Windows_x64_Test_Setup.exe -DestinationPath release-output/JARVIS_1.4.0_Windows_x64_Test.zip
+          Copy-Item ../../source-downloads/JARVIS_1.4.0_Voice_Test_Source.zip release-output/
+          Copy-Item docs/WINDOWS_ABNAHME_1.4_2026-11-13.md release-output/
+          Copy-Item docs/WINDOWS_VOICE_ERGEBNISSE_1.4.csv release-output/
+          Copy-Item speech-capabilities.json release-output/
+          $speech=Get-Content speech-capabilities.json | ConvertFrom-Json
+          $runtime=Get-Content release-output/WINDOWS_RUNTIME_SMOKE.json | ConvertFrom-Json
+          @"
+          # J.A.R.V.I.S. 1.4.0 – Windows-Abnahmebericht / Testbuild
+
+          Ergebnis: TEILPRÜFUNG. Keine vollständige Windows-10/11-Sprachabnahme.
+          Der Nutzer hat diesen unsignierten Testinstaller ausdrücklich für eigene Tests angefordert.
+
+          ## Frische native Prüfnachweise
+          Umgebung: $($runtime.os), MSVC x86_64-pc-windows-msvc. Kein Windows-10/11-Client und kein physischer Audiotestplatz.
+          Bestanden: TypeScript, React-Produktionsbuild, neun Node-Tests, 23 Core-Tests (SQLite, RAG, lokale HTTP-Testserver, Intent), native isolierte Credential-Manager-Speicherung/Ersetzung/Löschung, reale WinMM-Geräteliste ohne Aufnahme und Abbruch eines echten eigenen Windows-Kindprozesses.
+          AudioCapture-Lebenszyklus mit synthetischer WinMM-Grenze geprüft: verzögerter/idempotenter Start, PCM-Lesen, Identitätsbindung, fehlende Geräte, Abbruch und genau einmalige Freigabe. Dieser Test verwendet kein Mikrofon und prüft keine Wake-Erkennungsqualität.
+          System.Speech/C#-Host nativ kompiliert; deutsche Stimmen: $($speech.voices.Count); deutscher Erkenner: $($speech.recognition).
+          NSIS-Archiv vollständig geprüft; x64-Anwendung und drei unveränderte Voice-Ressourcen bestätigt.
+
+          ## Tatsächlich ausgeführte Installation und Anwendung
+          Installation: $($runtime.installed)
+          Anwendungsfenster: $($runtime.window_created)
+          HUD via UI Automation beobachtet: $($runtime.hud_rendered)
+          Mikrofon standardmäßig aus beobachtet: $($runtime.microphone_default_off)
+          Lokaler CPU-Befehl mit echter Rückmeldung beobachtet: $($runtime.local_cpu_tool)
+          Programmspezifische Offline-Firewall aktiv: $($runtime.offline_enforced)
+          Reguläres Schließen: $($runtime.graceful_close)
+          Deinstallation: $($runtime.uninstalled)
+          Datenbank erstellt: $($runtime.database_created); nach Deinstallation erhalten: $($runtime.database_preserved_after_uninstall)
+          Hinweise: $($runtime.notes -join ' ')
+          Fehlende UI-Automation-Nachweise gelten ausdrücklich als NICHT VERIFIZIERT.
+
+          ## Weitere lokale Nachweise
+          Linux/Chromium: 20 Browser-Regressionstests bestanden, einschließlich Abbruchfehler und verspäteter Freigabe. Die Browser-Tauri-Schnittstelle ist gemockt und ersetzt keinen nativen Sprachtest.
+          Zwei reproduzierte Fehler behoben: Aufnahme vor abgeschlossener Erkennerinitialisierung; verlorener Mikrofonbesitz nach Erkennungsfehler mit fehlgeschlagenem Abbruch. Einzelheiten und Risiken im beigefügten ausführlichen Bericht.
+
+          ## Nicht ausgeführt / offen
+          Wake-Word-Aussprachevarianten, echte Geräusche und Fehlaktivierungen, reale Mikrofonaufnahme/Gerätewechsel/Windows-Berechtigungsdialoge, deutsche STT/TTS mit Audioausgabe, Echo-/TTS-Selbstaktivierung, physische Ressourcenfreigabe, vollständiger gesprochener Dialog und echte OpenAI-/Groq-Konten sind NICHT GETESTET.
+          Lokale Befehle ohne Internet nur dann nativ nachgewiesen, wenn CPU-Befehl und Offline-Firewall oben beide True sind.
+          Keine vollständige Windows-10/11-Abnahme. Kein Produktivfreigabenachweis.
+          Bestehende System.Speech-Erkennung benötigt lokal installierte passende Windows-Sprachpakete; keine spezialisierte trainierte Hotword-Engine. Wake-Mikrofon nur nach ausdrücklicher Sitzungserlaubnis. Keine API-Schlüssel im Paket. Keine echten Provideranfragen im Test.
+          Cloud-Anbieter können Kosten verursachen. Getrennte Einzelfreigaben und Windows Credential Manager bleiben erhalten.
+
+          Source SHA-256: 2b94cca02280fc912b5434822c4d212de59ff7cf6c872a7fa0dde87b0fc302c6
+          Buildprotokoll: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID
+          "@ | Set-Content release-output/WINDOWS_ABNAHMEBERICHT.md -Encoding utf8NoBOM
+          Get-ChildItem release-output -File | ForEach-Object {"$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"} | Set-Content release-output/SHA256SUMS.txt -Encoding utf8NoBOM
+      - name: Publish requested private GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets=@(Get-ChildItem release-output -File | ForEach-Object FullName)
+          gh release create v1.4.0-beta.1 @assets --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --title 'J.A.R.V.I.S. 1.4 – Windows Voice Testbuild' --prerelease --notes-file release-output/WINDOWS_ABNAHMEBERICHT.md
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
