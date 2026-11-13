@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>J.A.R.V.I.S. | Command Center</title>
+<style>
+:root{--bg:#090d12;--panel:#101720;--panel2:#131d27;--line:#22303d;--text:#e8f0f6;--muted:#8b9aa8;--cyan:#59d7e8;--green:#65d6a2;--amber:#f2bd68;--red:#f07878}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 70% -20%,#17303a 0,transparent 38%),var(--bg);color:var(--text);font:14px/1.5 "Segoe UI",Arial,sans-serif}
+.app{display:grid;grid-template-columns:230px 1fr;min-height:100vh}.side{border-right:1px solid var(--line);padding:26px 18px;background:#0b1118;display:flex;flex-direction:column}
+.brand{display:flex;gap:11px;align-items:center;margin:0 0 38px 5px}.logo{width:36px;height:36px;border:1px solid #3c8592;border-radius:11px;display:grid;place-items:center;color:var(--cyan);font-weight:700;letter-spacing:-2px}.brand b{letter-spacing:2px;font-size:13px}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:2px}
+.navlabel{font-size:10px;color:#647484;letter-spacing:1.7px;margin:18px 10px 8px}.nav button{width:100%;border:0;background:transparent;color:#9aabb9;padding:11px 12px;border-radius:9px;text-align:left;display:flex;gap:12px;cursor:pointer;font:inherit;margin:2px 0}.nav button.active,.nav button:hover{background:#17232e;color:var(--text)}.nav button.active{box-shadow:inset 2px 0 var(--cyan)}.ico{width:18px;color:var(--cyan);text-align:center}.sidebottom{margin-top:auto;border-top:1px solid var(--line);padding:18px 8px 0;color:var(--muted);font-size:11px}
+main{padding:28px clamp(18px,3vw,42px);max-width:1600px;width:100%;margin:auto}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px;gap:15px}.eyebrow{color:var(--cyan);font-size:10px;letter-spacing:2px;text-transform:uppercase}.top h1{font-size:25px;margin:3px 0 0;font-weight:550;letter-spacing:.2px}.righttop{display:flex;align-items:center;gap:15px;color:var(--muted);font-size:12px}.statusdot{display:inline-block;width:7px;height:7px;background:var(--green);border-radius:50%;margin-right:7px;box-shadow:0 0 10px #65d6a2}
+.grid{display:grid;gap:15px}.hero{grid-template-columns:1.4fr .8fr;margin-bottom:15px}.metrics{grid-template-columns:repeat(4,1fr);margin-bottom:15px}.lower{grid-template-columns:1.15fr .85fr}.card{background:linear-gradient(145deg,#121b25,#0e151d);border:1px solid var(--line);border-radius:14px;padding:18px;min-width:0}.cardhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.cardhead h3{font-size:12px;letter-spacing:1px;text-transform:uppercase;font-weight:600;margin:0}.muted{color:var(--muted)}.tag{font-size:10px;padding:4px 8px;border:1px solid var(--line);border-radius:20px;color:var(--muted)}.tag.demo{color:var(--amber);border-color:#5b4930}
+.welcome{min-height:170px;display:flex;flex-direction:column;justify-content:space-between;background:linear-gradient(110deg,#14232d,#101820 65%,#10252c)}.welcome h2{font-size:22px;font-weight:500;margin:8px 0}.welcome p{color:#9eacb8;margin:0;max-width:530px}.welcome .bottomline{display:flex;justify-content:space-between;align-items:center;margin-top:22px;color:var(--muted);font-size:11px}
+.assistant{display:flex;align-items:center;gap:15px}.orb{height:55px;width:55px;border:1px solid #397b88;border-radius:50%;display:grid;place-items:center;color:var(--cyan);box-shadow:0 0 28px #1b768033,inset 0 0 20px #1b768022;font-size:22px}.assistant strong{display:block;font-size:14px;font-weight:550}.assistant small{color:var(--green)}
+.metric{padding:16px}.metric .label{color:var(--muted);font-size:11px;letter-spacing:1px}.metric .value{font-size:27px;font-weight:550;margin:6px 0 2px}.metric .sub{font-size:10px;color:var(--muted)}.bar{height:5px;background:#263440;border-radius:9px;margin-top:12px;overflow:hidden}.bar i{display:block;height:100%;background:var(--cyan);border-radius:9px;width:0;transition:width .5s}
+.rows{display:grid;gap:12px}.rowitem{display:flex;align-items:center;justify-content:space-between;gap:10px}.rowitem strong{font-size:12px;font-weight:550}.rowitem small{display:block;color:var(--muted);font-size:10px}.newsitem{padding:11px 0;border-bottom:1px solid var(--line)}.newsitem:last-child{border:0}.newsitem b{font-size:12px;font-weight:550}.newsitem p{font-size:11px;color:var(--muted);margin:4px 0 0}.action{border:1px solid #2c4a56;background:#142630;color:var(--cyan);padding:8px 11px;border-radius:8px;cursor:pointer;font:inherit;font-size:11px}.action:hover{background:#1b3541}.quick{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.activity{display:flex;gap:11px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--line);font-size:11px}.activity:last-child{border:0}.activity i{width:7px;height:7px;border-radius:50%;background:var(--cyan);margin-top:5px;flex:none}.activity span{color:var(--muted)}
+.section{display:none}.section.show{display:block}.placeholder{padding:28px;color:var(--muted);text-align:center;border:1px dashed var(--line);border-radius:10px}
+.chatlog{height:210px;overflow:auto;background:#0a1118;border:1px solid var(--line);border-radius:10px;padding:12px;margin:12px 0;font-size:12px;white-space:pre-wrap}.chatline{margin:0 0 10px}.chatline b{color:var(--cyan)}.chatinput{display:flex;gap:8px}.chatinput input{flex:1;min-width:0;background:#0a1118;border:1px solid var(--line);border-radius:8px;padding:11px;color:var(--text);font:inherit;outline:none}.chatinput input:focus{border-color:#397b88}.chatinput button:disabled{opacity:.5;cursor:wait}
+footer{color:#657583;font-size:10px;text-align:right;margin-top:18px}
+@media(max-width:900px){.app{grid-template-columns:68px 1fr}.side{padding:20px 9px}.brand{margin:0 auto 30px}.brandtext,.navlabel,.nav button .navtext,.sidebottom{display:none}.nav button{justify-content:center;padding:12px 5px}.hero,.lower{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){.metrics{grid-template-columns:1fr 1fr}.righttop .date{display:none}main{padding:20px 13px}.top h1{font-size:21px}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="side">
+ <div class="brand"><div class="logo">J.</div><div class="brandtext"><b>J.A.R.V.I.S.</b><small>PERSONAL SYSTEM</small></div></div>
+ <div class="navlabel">KOMMANDOZENTRALE</div>
+ <nav class="nav">
+  <button class="active" data-page="overview"><span class="ico">⌂</span><span class="navtext">Übersicht</span></button>
+  <button data-page="system"><span class="ico">▤</span><span class="navtext">PC-Überwachung</span></button>
+  <button data-page="ai"><span class="ico">✧</span><span class="navtext">KI-Nachrichten</span></button>
+  <button data-page="wow"><span class="ico">⚔</span><span class="navtext">WoW Forever</span></button>
+ </nav>
+ <div class="navlabel">WERKZEUGE</div><nav class="nav">
+  <button data-page="activity"><span class="ico">◷</span><span class="navtext">Aktivitätslog</span></button>
+  <button data-page="settings"><span class="ico">⚙</span><span class="navtext">Einstellungen</span></button>
+ </nav>
+ <div class="sidebottom">LOKALER MODUS · WINDOWS<br><span style="color:#65d6a2">●</span> Backend lokal</div>
+</aside>
+<main>
+ <div class="top"><div><div class="eyebrow">PERSONAL COMMAND CENTER</div><h1 id="pagetitle">Guten Tag. Systemübersicht.</h1></div><div class="righttop"><span><i class="statusdot"></i><span id="connection">Prüfe Backend …</span></span><span class="date" id="clock">--:--</span></div></div>
+ <section class="section show" id="overview">
+  <div class="grid hero">
+   <div class="card welcome"><div><div class="eyebrow">J.A.R.V.I.S. · BEREIT</div><h2>Alles im Blick. Ein Ort.</h2><p>Deine persönliche Zentrale für Systemstatus, künstliche Intelligenz und Azeroth.</p></div><div class="bottomline"><span>Lokale Windows-Verbindung</span><span>v0.2</span></div></div>
+   <div class="card"><div class="cardhead"><h3>Assistent</h3><span class="tag" id="apiStatus">VERBINDE …</span></div><div class="assistant"><div class="orb">J</div><div><strong>J.A.R.V.I.S.</strong><small> Lokaler KI-Zugang</small></div></div>
+    <div class="chatlog" id="chatlog"><div class="chatline"><b>J.A.R.V.I.S.</b><br>Guten Tag. Die lokale Oberfläche ist bereit. Schreibe mir eine Nachricht, sobald die API-Schlüssel in der lokalen Konfiguration eingetragen sind.</div></div>
+    <form class="chatinput" id="chatform"><input id="message" placeholder="Nachricht an J.A.R.V.I.S. …" autocomplete="off"><button class="action" id="send" type="submit">Senden ↗</button></form>
+   </div>
+  </div>
+  <div class="grid metrics">
+   <div class="card metric"><div class="label">CPU-AUSLASTUNG</div><div class="value">--<small style="font-size:13px"> %</small></div><div class="sub">Sensor-Anbindung folgt</div><div class="bar"><i></i></div></div>
+   <div class="card metric"><div class="label">GPU-AUSLASTUNG</div><div class="value">--<small style="font-size:13px"> %</small></div><div class="sub">Sensor-Anbindung folgt</div><div class="bar"><i></i></div></div>
+   <div class="card metric"><div class="label">ARBEITSSPEICHER</div><div class="value">--<small style="font-size:13px"> GB</small></div><div class="sub">Sensor-Anbindung folgt</div><div class="bar"><i></i></div></div>
+   <div class="card metric"><div class="label">TEMPERATUR</div><div class="value">--<small style="font-size:13px"> °C</small></div><div class="sub">CPU / GPU folgt</div><div class="bar"><i></i></div></div>
+  </div>
+  <div class="grid lower">
+   <div class="card"><div class="cardhead"><h3>Intelligence Feed</h3><span class="tag">VORBEREITET</span></div><div class="newsitem"><b>KI-Nachrichten-Zentrale</b><p>Aktuelle Meldungen zu Modellen, Tools und Forschung – deutsche Zusammenfassungen mit Quellen kommen als nächstes.</p></div><div class="newsitem"><b>WoW Forever – Community Feed</b><p>Raids, Guides, Klassenwissen und Neuigkeiten aus der Community.</p></div><div class="quick"><button class="action" onclick="go('ai')">KI-Bereich öffnen</button><button class="action" onclick="go('wow')">WoW-Bereich öffnen</button></div></div>
+   <div class="card"><div class="cardhead"><h3>Letzte Aktivitäten</h3><span class="tag">LOKAL</span></div><div class="activity"><i></i><div>J.A.R.V.I.S.-Oberfläche gestartet<br><span>Diese Sitzung</span></div></div><div class="activity"><i></i><div>Groq-Verbindung wird lokal geprüft<br><span>API-Schlüssel bleiben auf diesem PC</span></div></div></div>
+  </div>
+ </section>
+ <section class="section" id="system"><div class="grid metrics"><div class="card metric"><div class="label">CPU</div><div class="value">-- %</div><div class="sub">Auslastung</div></div><div class="card metric"><div class="label">GPU</div><div class="value">-- %</div><div class="sub">Auslastung / VRAM</div></div><div class="card metric"><div class="label">RAM</div><div class="value">-- GB</div><div class="sub">Belegt / Gesamt</div></div><div class="card metric"><div class="label">TEMPERATUREN</div><div class="value">-- °C</div><div class="sub">CPU / GPU</div></div></div><div class="card"><div class="cardhead"><h3>Hardware-Telemetrie</h3><span class="tag demo">NOCH NICHT VERBUNDEN</span></div><p class="muted">Die Hardware-Sensorik wird als separates Modul ergänzt. Der KI-Backend-Dienst ist davon unabhängig.</p></div></section>
+ <section class="section" id="ai"><div class="card"><div class="cardhead"><h3>KI Intelligence</h3><span class="tag">DEUTSCH</span></div><p class="muted">Dieser Bereich wird für aktuelle KI-Meldungen mit deutschen Zusammenfassungen und Quellen vorbereitet.</p><div class="placeholder">Nachrichten-Feed noch nicht verbunden.</div></div></section>
+ <section class="section" id="wow"><div class="card"><div class="cardhead"><h3>World of Warcraft Forever</h3><span class="tag">GAMING HUB</span></div><p class="muted">Dein deutschsprachiger Bereich für Community-News, Raidplanung, Boss-Guides, Klassen und Builds.</p><div class="grid metrics" style="margin-top:18px"><div class="card"><b>Raid-Board</b><p class="muted">Termine, Aufstellungen und Fortschritt</p></div><div class="card"><b>Boss-Guides</b><p class="muted">Taktiken und Rollen verständlich erklärt</p></div><div class="card"><b>Klassen & Builds</b><p class="muted">Talente, Ausrüstung und Tipps</p></div><div class="card"><b>Community-News</b><p class="muted">Aktuelle Inhalte und Ankündigungen</p></div></div><div class="placeholder">WoW-Forever-Quelle noch nicht verbunden.</div></div></section>
+ <section class="section" id="activity"><div class="card"><div class="cardhead"><h3>Systemprotokoll</h3><span class="tag">LOKAL</span></div><div id="log"><div class="activity"><i></i><div>Interface gestartet<span>Diese Sitzung</span></div></div><div class="activity"><i></i><div>Lokaler Backend-Status wird geprüft<span>Diese Sitzung</span></div></div></div></div></section>
+ <section class="section" id="settings"><div class="card"><div class="cardhead"><h3>Einstellungen</h3></div><p class="muted">Die API-Schlüssel werden ausschließlich in der Datei <code>.env</code> auf deinem PC gespeichert. Sie werden weder an den Browser noch an das Dashboard ausgegeben.</p><div class="rowitem"><div><strong>KI-Anbieter</strong><small>Groq API · Primär- und Ersatzschlüssel</small></div><span class="tag">LOKAL</span></div><hr style="border:0;border-top:1px solid var(--line);margin:15px 0"><div class="rowitem"><div><strong>Backend-Adresse</strong><small>http://127.0.0.1:8765</small></div><span class="tag">LOOPBACK</span></div></div></section>
+ <footer>J.A.R.V.I.S. · PERSONAL COMMAND CENTER · WINDOWS BUILD 0.2</footer>
+</main></div>
+<script>
+const titles={overview:"Guten Tag. Systemübersicht.",system:"PC-Überwachung.",ai:"KI Intelligence.",wow:"World of Warcraft Forever.",activity:"Aktivitätsprotokoll.",settings:"Einstellungen."};
+function go(id){document.querySelectorAll('.section').forEach(s=>s.classList.remove('show'));document.getElementById(id).classList.add('show');document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===id));document.getElementById('pagetitle').textContent=titles[id]}
+document.querySelectorAll('.nav button').forEach(b=>b.addEventListener('click',()=>go(b.dataset.page)));
+function tick(){let d=new Date();document.getElementById('clock').textContent=d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'short'})+' · '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}tick();setInterval(tick,15000);
+async function check(){try{let r=await fetch('/api/status');let j=await r.json();document.getElementById('connection').textContent='Backend verbunden';document.getElementById('apiStatus').textContent=j.ready?'GROQ BEREIT':'API-KEY FEHLT';document.getElementById('apiStatus').className='tag '+(j.ready?'':'demo')}catch(e){document.getElementById('connection').textContent='Backend nicht erreichbar';document.getElementById('apiStatus').textContent='OFFLINE'}}
+check();setInterval(check,15000);
+const log=document.getElementById('chatlog');
+function add(who,txt){let d=document.createElement('div');d.className='chatline';let b=document.createElement('b');b.textContent=who;let t=document.createElement('div');t.textContent=txt;d.append(b,document.createElement('br'),t);log.append(d);log.scrollTop=log.scrollHeight}
+document.getElementById('chatform').addEventListener('submit',async e=>{e.preventDefault();let inp=document.getElementById('message'),btn=document.getElementById('send'),msg=inp.value.trim();if(!msg)return;add('DU',msg);inp.value='';btn.disabled=true;btn.textContent='…';try{let r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg})});let j=await r.json();if(!r.ok)throw new Error(j.error||'Anfrage fehlgeschlagen');add('J.A.R.V.I.S.',j.reply)}catch(err){add('SYSTEM',err.message)}finally{btn.disabled=false;btn.textContent='Senden ↗'}});
+</script>
+</body></html>

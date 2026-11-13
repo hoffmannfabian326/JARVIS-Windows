@@ -1,0 +1,16 @@
+Test;Windows-Build;Mikrofon;Stimme/Erkenner;Bedingungen;Versuche;Treffer;Fehlaktivierungen;Ergebnis;Bemerkung
+Javis normale Aussprache;;;;;;;;NICHT AUSGEFÜHRT;
+Javis leise;;;;;;;;NICHT AUSGEFÜHRT;
+Javis verschiedene Abstände;;;;;;;;NICHT AUSGEFÜHRT;
+Javis Aussprachevarianten/Akzente;;;;;;;;NICHT AUSGEFÜHRT;
+Ähnliche Wörter ohne Aktivierung;;;;;;;;NICHT AUSGEFÜHRT;
+Hintergrundgeräusche/Gespräche;;;;;;;;NICHT AUSGEFÜHRT;
+Standardgerät/spezifische Auswahl;;;;;;;;NICHT AUSGEFÜHRT;
+Gerätewechsel/Abziehen;;;;;;;;NICHT AUSGEFÜHRT;
+Windows-Mikrofonrechte verweigert;;;;;;;;NICHT AUSGEFÜHRT;
+Diktat und Sprechpause;;;;;;;;NICHT AUSGEFÜHRT;
+Deutsche TTS/männliche Stimme;;;;;;;;NICHT AUSGEFÜHRT;
+Kein Wake durch eigene TTS;;;;;;;;NICHT AUSGEFÜHRT;
+Abbruch/Schließen/Ressourcenfreigabe;;;;;;;;NICHT AUSGEFÜHRT;
+Lokale Tools ohne Internet;;;;;;;;NICHT AUSGEFÜHRT;
+OpenAI/Groq ausdrücklich freigegeben;;;;;;;;NICHT AUSGEFÜHRT;
