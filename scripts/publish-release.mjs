@@ -93,8 +93,14 @@ async function upload(repo, release, file) {
 }
 
 async function main() {
-  const user = await call(`${api}/user`);
-  for (const owner of [user.login, process.env.GH_OWNER].filter(Boolean)) {
+  // Im Workflow darf GITHUB_TOKEN /user nicht lesen (403). Deshalb zuerst die
+  // Repo-Angaben aus der Umgebung, /user nur als Rückfall für lokale Läufe.
+  const owners = [process.env.GH_OWNER, (process.env.GITHUB_REPOSITORY || '').split('/')[0]]
+    .filter(Boolean)
+    .filter((owner, index, all) => all.indexOf(owner) === index);
+  if (owners.length === 0) owners.push((await call(`${api}/user`)).login);
+
+  for (const owner of owners) {
     const repo = await call(`${api}/repos/${owner}/${repoName}`).catch((error) => {
       if (String(error.message).includes('404')) return null;
       throw error;
