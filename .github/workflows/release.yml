@@ -143,14 +143,16 @@ jobs:
         run: |
           $url = "https://github.com/$env:RELEASES_OWNER/$env:RELEASES_REPO/releases/download/$env:TAG/latest.yml"
           $pattern = 'version:\s*' + [regex]::Escape($env:VERSION) + '\s*(\r?\n|$)'
-          for ($attempt = 1; $attempt -le 5; $attempt++) {
+          # Frisch hochgeladene Release-Dateien sind nicht sofort über die
+          # Download-URL erreichbar; deshalb großzügig warten.
+          for ($attempt = 1; $attempt -le 12; $attempt++) {
             try {
               if ((Invoke-WebRequest $url -UseBasicParsing -TimeoutSec 20).Content -match $pattern) {
                 Write-Host "Kanal in Ordnung: $env:VERSION"
                 exit 0
               }
             } catch { }
-            Start-Sleep -Seconds 5
+            Start-Sleep -Seconds 10
           }
           throw "latest.yml unter $url meldet nicht $env:VERSION."
 
