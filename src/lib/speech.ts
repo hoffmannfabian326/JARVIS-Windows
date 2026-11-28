@@ -25,7 +25,18 @@ export function getRecognitionCtor(): RecognitionCtor | null {
   return (w.SpeechRecognition || w.webkitSpeechRecognition) ?? null;
 }
 
-export const recognitionSupported = (): boolean => getRecognitionCtor() !== null;
+/**
+ * Nur im Browser nutzbar. In der Electron-Hülle gibt es das Objekt zwar,
+ * aber keinen Dienst dahinter: Chromium überträgt Sprache an Google, und
+ * dafür fehlen der Desktop-App die Schlüssel. Jeder Start endet dort mit
+ * dem Fehler „network“. In der App übernehmen deshalb die lokale Engine
+ * (sherpa-onnx) bzw. die Windows-Spracherkennung (SAPI).
+ */
+export const recognitionSupported = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  if ((window as any).jarvisDesktop) return false;
+  return getRecognitionCtor() !== null;
+};
 
 export interface SpeechEngineHandlers {
   lang: string;

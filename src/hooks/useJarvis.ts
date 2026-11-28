@@ -1913,13 +1913,13 @@ export function useJarvis() {
     return () => window.removeEventListener('keydown', onKey);
   }, [cancelCurrent]);
 
-  // In der Desktop-Hülle fehlt die Web-Speech-Erkennung: einmal transparent
-  // erklären, wie das Zuhören dort funktioniert.
+  // In der Desktop-Hülle läuft Zuhören nicht über Web-Speech: einmal
+  // transparent erklären, wie es dort funktioniert.
   useEffect(() => {
     if (!getDesktop() || recognitionSupported()) return;
     pushEntry({
       role: 'system',
-      text: 'Desktop-Modus: Die Spracherkennung des Browsers ist hier nicht verfügbar. Nutze Strg+Shift+J und die Befehlseingabe — das Weckwort läuft in der Browser-Version.',
+      text: 'Desktop-Modus: Zuhören läuft über die Windows-Spracherkennung (SAPI) bzw. die lokale Engine. Weckwort „Hey Jarvis“ und Strg+Shift+J nehmen den Befehl direkt auf.',
     });
   }, [pushEntry]);
 
