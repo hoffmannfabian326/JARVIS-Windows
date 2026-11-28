@@ -684,7 +684,7 @@ export function useJarvis() {
       if (!aiStatusRef.current?.configured) {
         return {
           speak:
-            'Für freie Fragen brauche ich ein Sprachmodell. Hinterlege GROQ_API_KEY oder ZAI_API_KEY in der Datei .env und starte den Server neu, dann beantworte ich alle Fragen.',
+            'Für freie Fragen brauche ich ein Sprachmodell. Hinterlege GEMINI_API_KEY oder ZAI_API_KEY in der Datei .env und starte den Server neu, dann beantworte ich alle Fragen.',
         };
       }
 
@@ -2142,7 +2142,7 @@ export function useJarvis() {
           role: 'system',
           text: isConfigured
             ? `Sprachmodell verbunden: ${status?.model ?? 'KI'}. Freie Fragen sind ab jetzt verfügbar.`
-            : 'Sprachmodell nicht verfügbar. Trage GROQ_API_KEY oder ZAI_API_KEY in die .env ein — die Verbindung wird automatisch erkannt.',
+            : 'Sprachmodell nicht verfügbar. Trage GEMINI_API_KEY oder ZAI_API_KEY in die .env ein — die Verbindung wird automatisch erkannt.',
         });
       }
     };

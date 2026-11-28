@@ -79,11 +79,11 @@ export default function SettingsDrawer({
   const [hotkeyNote, setHotkeyNote] = useState('');
   const [hotkeyBusy, setHotkeyBusy] = useState(false);
   const [api, setApi] = useState<ApiConfigState | null>(null);
-  const [provider, setProvider] = useState<'' | 'groq' | 'zai' | 'ollama'>('');
+  const [provider, setProvider] = useState<'' | 'gemini' | 'zai' | 'ollama'>('');
   const [model, setModel] = useState('');
   const [aiBase, setAiBase] = useState('');
   const [voiceId, setVoiceId] = useState('');
-  const [groqKey, setGroqKey] = useState('');
+  const [geminiKey, setGeminiKey] = useState('');
   const [zaiKey, setZaiKey] = useState('');
   const [elevenKey, setElevenKey] = useState('');
   const [apiNote, setApiNote] = useState('');
@@ -192,7 +192,7 @@ const TOOL_LABELS: Record<string, string> = {
       }
       await loadApiConfig();
       refreshDesktopInfo();
-      setGroqKey('');
+      setGeminiKey('');
       setZaiKey('');
       setElevenKey('');
       setApiNote('Gespeichert. Der lokale Server liest die Datei sofort neu ein.');
@@ -210,7 +210,7 @@ const TOOL_LABELS: Record<string, string> = {
       aiBase: aiBase.trim(),
       elevenlabsVoiceId: voiceId.trim(),
     };
-    if (groqKey.trim()) draft.groqKey = groqKey.trim();
+    if (geminiKey.trim()) draft.geminiKey = geminiKey.trim();
     if (zaiKey.trim()) draft.zaiKey = zaiKey.trim();
     if (elevenKey.trim()) draft.elevenlabsKey = elevenKey.trim();
     void saveApiConfig(draft);
@@ -499,10 +499,10 @@ const TOOL_LABELS: Record<string, string> = {
                 <select
                   className="select"
                   value={provider}
-                  onChange={(event) => setProvider(event.target.value as '' | 'groq' | 'zai' | 'ollama')}
+                  onChange={(event) => setProvider(event.target.value as '' | 'gemini' | 'zai' | 'ollama')}
                 >
-                  <option value="">Automatisch (Groq, sonst Z.AI)</option>
-                  <option value="groq">Groq</option>
+                  <option value="">Automatisch (Gemini, sonst Z.AI)</option>
+                  <option value="gemini">Gemini</option>
                   <option value="zai">Z.AI</option>
                   <option value="ollama">Ollama (lokal, ohne Key)</option>
                 </select>
@@ -510,22 +510,22 @@ const TOOL_LABELS: Record<string, string> = {
 
               <label className="field">
                 <span>
-                  Groq API-Key <b>{api?.keys.groq ? 'gesetzt' : 'fehlt'}</b>
+                  Gemini API-Key <b>{api?.keys.gemini ? 'gesetzt' : 'fehlt'}</b>
                 </span>
                 <div className="key-row">
                   <input
                     type="password"
-                    value={groqKey}
+                    value={geminiKey}
                     autoComplete="off"
                     spellCheck={false}
-                    placeholder={api?.keys.groq ? 'gesetzt — leer lassen zum Behalten' : 'gsk_…'}
-                    onChange={(event) => setGroqKey(event.target.value)}
+                    placeholder={api?.keys.gemini ? 'gesetzt — leer lassen zum Behalten' : 'AIza…'}
+                    onChange={(event) => setGeminiKey(event.target.value)}
                   />
-                  {api?.keys.groq ? (
+                  {api?.keys.gemini ? (
                     <button
                       type="button"
                       className="key-clear"
-                      onClick={() => void saveApiConfig({ groqKey: null })}
+                      onClick={() => void saveApiConfig({ geminiKey: null })}
                     >
                       löschen
                     </button>

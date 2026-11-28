@@ -281,19 +281,19 @@ export interface ErrorLog {
 export interface ApiConfigState {
   envFile: string;
   fileExists: boolean;
-  provider: '' | 'groq' | 'zai' | 'ollama';
-  detected: '' | 'groq' | 'zai';
+  provider: '' | 'gemini' | 'zai' | 'ollama';
+  detected: '' | 'gemini' | 'zai';
   model: string;
   aiBase: string;
   elevenlabsVoiceId: string;
-  keys: { groq: boolean; zai: boolean; custom: boolean; elevenlabs: boolean };
+  keys: { gemini: boolean; zai: boolean; custom: boolean; elevenlabs: boolean };
 }
 
 export interface ApiConfigDraft {
-  provider?: '' | 'groq' | 'zai' | 'ollama';
+  provider?: '' | 'gemini' | 'zai' | 'ollama';
   model?: string | null;
   aiBase?: string | null;
-  groqKey?: string | null;
+  geminiKey?: string | null;
   zaiKey?: string | null;
   customKey?: string | null;
   elevenlabsKey?: string | null;

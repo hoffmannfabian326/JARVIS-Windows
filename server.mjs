@@ -48,12 +48,12 @@ if (dataDir) llmUsage.configure({ file: join(dataDir, 'llm-usage.json') });
 
 // Alle Anbieter sind OpenAI-kompatibel, es reichen also Key, Basis-URL und Modell.
 const PROVIDERS = {
-  groq: {
-    name: 'Groq',
-    key: 'GROQ_API_KEY',
-    base: 'https://api.groq.com/openai/v1',
-    model: 'openai/gpt-oss-120b',
-    vision: 'meta-llama/llama-4-scout-17b-16e-instruct',
+  gemini: {
+    name: 'Gemini',
+    key: 'GEMINI_API_KEY',
+    base: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    model: 'gemini-4-hydrogen',
+    vision: 'gemini-4-hydrogen',
   },
   zai: {
     name: 'Z.ai',
@@ -141,7 +141,7 @@ function buildChain() {
     push('ollama');
   } else {
     if (PROVIDERS[requested]) push(requested);
-    for (const id of ['groq', 'zai']) push(id);
+    for (const id of ['gemini', 'zai']) push(id);
     push('custom');
     push('ollama');
   }

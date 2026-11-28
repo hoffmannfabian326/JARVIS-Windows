@@ -166,7 +166,7 @@ function ensureUserEnv() {
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     if (fs.existsSync(example)) fs.copyFileSync(example, file);
-    else fs.writeFileSync(file, '# AI_PROVIDER=groq\n# GROQ_API_KEY=...\n# ZAI_API_KEY=...\n');
+    else fs.writeFileSync(file, '# AI_PROVIDER=gemini\n# GEMINI_API_KEY=...\n# ZAI_API_KEY=...\n');
   } catch {
     /* schreibgeschützt: der Proxy läuft dann ohne Key */
   }
@@ -631,7 +631,7 @@ async function collectDiagnostics() {
       : 'kein API-Key hinterlegt',
     hint: health?.configured
       ? `Ausweichkette: ${(health.providers || []).map((entry) => entry.name).join(' → ') || '—'}`
-      : 'GROQ_API_KEY oder ZAI_API_KEY in die .env eintragen.',
+      : 'GEMINI_API_KEY oder ZAI_API_KEY in die .env eintragen.',
   });
 
   checks.push({

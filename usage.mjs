@@ -16,8 +16,7 @@ export const WARN_USD = 1;
 
 /** Preise in USD pro 1 Mio. Tokens. */
 const PRICES = [
-  { provider: 'groq', match: /^openai\/gpt-oss-120b$/i, input: 0.15, output: 0.75 },
-  { provider: 'groq', match: /^llama-3\.3-70b/i, input: 0.59, output: 0.79 },
+  { provider: 'gemini', match: /^gemini-4-hydrogen/i, input: 1.5, output: 7.5 },
   { provider: 'zai', match: /^glm-4-flash/i, input: 0, output: 0 },
   { provider: 'ollama', match: /.*/, input: 0, output: 0 },
 ];

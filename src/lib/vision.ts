@@ -45,7 +45,7 @@ export async function askVision(question: string, options: VisionOptions = {}): 
       return {
         ok: false,
         error:
-          'Für Bildschirmfragen fehlt ein Bildmodell. Trage in den Zugangsdaten ein Modell mit Bildverständnis ein oder nutze Groq.',
+          'Für Bildschirmfragen fehlt ein Bildmodell. Trage in den Zugangsdaten ein Modell mit Bildverständnis ein oder nutze Gemini.',
       };
     }
     if (response.status === 503) {

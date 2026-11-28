@@ -9,7 +9,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const PROVIDERS = new Set(['', 'groq', 'zai', 'ollama']);
+const PROVIDERS = new Set(['', 'gemini', 'zai', 'ollama']);
 const HEADER = [
   '# J.A.R.V.I.S. — Zugangsdaten, nur lokal auf diesem Rechner.',
   '# Diese Datei wird von der App gepflegt (Einstellungen → Zugangsdaten).',
@@ -58,12 +58,12 @@ function state() {
     envFile,
     fileExists: fs.existsSync(envFile),
     provider: PROVIDERS.has(requested) && requested !== '' ? requested : '',
-    detected: env.GROQ_API_KEY ? 'groq' : env.ZAI_API_KEY ? 'zai' : '',
+    detected: env.GEMINI_API_KEY ? 'gemini' : env.ZAI_API_KEY ? 'zai' : '',
     model: env.AI_MODEL || '',
     aiBase: env.AI_API_BASE || '',
     elevenlabsVoiceId: env.ELEVENLABS_VOICE_ID || '',
     keys: {
-      groq: Boolean(env.GROQ_API_KEY),
+      gemini: Boolean(env.GEMINI_API_KEY),
       zai: Boolean(env.ZAI_API_KEY),
       custom: Boolean(env.AI_API_KEY),
       elevenlabs: Boolean(env.ELEVENLABS_API_KEY),
@@ -135,7 +135,7 @@ function save(input = {}) {
 
   take(input.model, 'AI_MODEL', 'text');
   take(input.aiBase, 'AI_API_BASE', 'text');
-  take(input.groqKey, 'GROQ_API_KEY');
+  take(input.geminiKey, 'GEMINI_API_KEY');
   take(input.zaiKey, 'ZAI_API_KEY');
   take(input.customKey, 'AI_API_KEY');
   take(input.elevenlabsKey, 'ELEVENLABS_API_KEY');

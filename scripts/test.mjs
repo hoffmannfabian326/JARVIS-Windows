@@ -48,26 +48,26 @@ await test('apiconfig schreibt, liest und löscht Keys', () => {
 
   const api = require('../electron/apiconfig.cjs');
   api.configure(file);
-  assert.deepEqual(api.state().keys, { groq: false, zai: false, custom: false, elevenlabs: false });
+  assert.deepEqual(api.state().keys, { gemini: false, zai: false, custom: false, elevenlabs: false });
 
-  api.save({ provider: 'groq', groqKey: '  test-key  ', model: '' });
+  api.save({ provider: 'gemini', geminiKey: '  test-key  ', model: '' });
   const text = readFileSync(file, 'utf8');
-  assert.match(text, /GROQ_API_KEY=test-key/);
-  assert.match(text, /AI_PROVIDER=groq/);
+  assert.match(text, /GEMINI_API_KEY=test-key/);
+  assert.match(text, /AI_PROVIDER=gemini/);
   assert.match(text, /# vorhanden/);
   assert.doesNotMatch(text, /AI_MODEL/);
-  assert.equal(api.state().keys.groq, true);
-  assert.equal(api.state().provider, 'groq');
+  assert.equal(api.state().keys.gemini, true);
+  assert.equal(api.state().provider, 'gemini');
 
   const status = JSON.stringify(api.state());
   assert.ok(!status.includes('test-key'), 'Status darf den Key nicht enthalten');
 
-  api.save({ groqKey: null, provider: '', elevenlabsKey: 'xi-test' });
-  assert.equal(api.state().keys.groq, false);
+  api.save({ geminiKey: null, provider: '', elevenlabsKey: 'xi-test' });
+  assert.equal(api.state().keys.gemini, false);
   assert.equal(api.state().keys.elevenlabs, true);
   assert.equal(api.state().provider, '');
 
-  assert.throws(() => api.save({ groqKey: 'a\nb' }), /Zeilenumbrüche/);
+  assert.throws(() => api.save({ geminiKey: 'a\nb' }), /Zeilenumbrüche/);
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -646,7 +646,7 @@ await test('Bildfrage erreicht das Bildmodell und liefert eine Antwort', async (
 
   const dir = tempDir('jarvis-vision-');
   const envFile = join(dir, '.env');
-  writeFileSync(envFile, 'AI_PROVIDER=groq\nGROQ_API_KEY=test-key\n');
+  writeFileSync(envFile, 'AI_PROVIDER=gemini\nGEMINI_API_KEY=test-key\n');
   const port = 19500 + Math.floor(Math.random() * 400);
 
   const child = spawn(process.execPath, ['server.mjs'], {
@@ -741,7 +741,7 @@ await test('Werkzeug-Aufruf geht an den Client und die Antwort kommt zurück', a
 
   const dir = tempDir('jarvis-tools-');
   const envFile = join(dir, '.env');
-  writeFileSync(envFile, 'AI_PROVIDER=groq\nGROQ_API_KEY=test-key\n');
+  writeFileSync(envFile, 'AI_PROVIDER=gemini\nGEMINI_API_KEY=test-key\n');
   const port = 21000 + Math.floor(Math.random() * 400);
 
   const child = spawn(process.execPath, ['server.mjs'], {
@@ -844,7 +844,7 @@ await test('Explizite Suche liefert Treffer und Quellen an die Antwort', async (
 
   const dir = tempDir('jarvis-search-');
   const envFile = join(dir, '.env');
-  writeFileSync(envFile, 'AI_PROVIDER=groq\nGROQ_API_KEY=test-key\n');
+  writeFileSync(envFile, 'AI_PROVIDER=gemini\nGEMINI_API_KEY=test-key\n');
   const port = 21500 + Math.floor(Math.random() * 300);
 
   const child = spawn(process.execPath, ['server.mjs'], {
@@ -931,7 +931,7 @@ await test('Ohne Cloud-Key übernimmt ein laufendes Ollama', async () => {
       OLLAMA_BASE_URL: `http://127.0.0.1:${mockPort}`,
       OLLAMA_MODEL: 'gemma3:4b',
       AI_PROVIDER: '',
-      GROQ_API_KEY: '',
+      GEMINI_API_KEY: '',
       ZAI_API_KEY: '',
       AI_API_KEY: '',
     },
@@ -990,7 +990,7 @@ await test('Antworten werden als SSE gestreamt', async () => {
 
   const dir = tempDir('jarvis-stream-');
   const envFile = join(dir, '.env');
-  writeFileSync(envFile, 'AI_PROVIDER=groq\nGROQ_API_KEY=test-key\n');
+  writeFileSync(envFile, 'AI_PROVIDER=gemini\nGEMINI_API_KEY=test-key\n');
   const port = 22000 + Math.floor(Math.random() * 300);
 
   const child = spawn(process.execPath, ['server.mjs'], {
@@ -1089,7 +1089,7 @@ await test('Gestreamte Werkzeug-Fragmente werden zusammengesetzt', async () => {
 
   const dir = tempDir('jarvis-stream-tool-');
   const envFile = join(dir, '.env');
-  writeFileSync(envFile, 'AI_PROVIDER=groq\nGROQ_API_KEY=test-key\n');
+  writeFileSync(envFile, 'AI_PROVIDER=gemini\nGEMINI_API_KEY=test-key\n');
   const port = 22500 + Math.floor(Math.random() * 300);
 
   const child = spawn(process.execPath, ['server.mjs'], {
@@ -1151,7 +1151,7 @@ await test('LLM-Nutzung zählt Tokens, Kosten und Warnschwelle', () => {
   llmUsage.configure({ file });
 
   assert.equal(llmUsage.summary().today.tokens, 0);
-  llmUsage.record({ provider: 'groq', model: 'openai/gpt-oss-120b', prompt: 1000, completion: 500 });
+  llmUsage.record({ provider: 'gemini', model: 'gemini-4-hydrogen', prompt: 1000, completion: 500 });
   const first = llmUsage.summary();
   assert.equal(first.today.tokens, 1500);
   assert.equal(first.today.requests, 1);
@@ -1165,7 +1165,7 @@ await test('LLM-Nutzung zählt Tokens, Kosten und Warnschwelle', () => {
   llmUsage.record({ provider: 'eigen', model: 'x', prompt: 10, completion: 10 });
   assert.equal(llmUsage.summary().priced, false);
 
-  llmUsage.record({ provider: 'groq', model: 'openai/gpt-oss-120b', prompt: 400000, completion: 0 });
+  llmUsage.record({ provider: 'gemini', model: 'gemini-4-hydrogen', prompt: 400000, completion: 0 });
   assert.equal(llmUsage.summary().warning, true);
   assert.match(llmUsage.summary().reason, /Tokens/);
 
@@ -1283,7 +1283,7 @@ await test('Proxy meldet einen abgelehnten Key als auth statt als Netzfehler', a
 
   const dir = tempDir('jarvis-auth-');
   const envFile = join(dir, '.env');
-  writeFileSync(envFile, 'AI_PROVIDER=groq\nGROQ_API_KEY=abgelehnt\n');
+  writeFileSync(envFile, 'AI_PROVIDER=gemini\nGEMINI_API_KEY=abgelehnt\n');
   const port = 23500 + Math.floor(Math.random() * 300);
 
   const child = spawn(process.execPath, ['server.mjs'], {
@@ -1354,7 +1354,7 @@ await test('Zwischenablage, Gedächtnis-Extraktion und Zusammenfassung', async (
 
   const dir = tempDir('jarvis-context-');
   const envFile = join(dir, '.env');
-  writeFileSync(envFile, 'AI_PROVIDER=groq\nGROQ_API_KEY=test-key\n');
+  writeFileSync(envFile, 'AI_PROVIDER=gemini\nGEMINI_API_KEY=test-key\n');
   const port = 23800 + Math.floor(Math.random() * 200);
 
   const child = spawn(process.execPath, ['server.mjs'], {
