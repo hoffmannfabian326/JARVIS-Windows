@@ -6,7 +6,11 @@ import { matchRoutine, runRoutine } from './routines';
 
 export interface DesktopActions {
   openApp: (name: string) => Promise<JarvisReply>;
+  /** Beendet ein laufendes Programm (Desktop-Hülle). */
+  closeApp?: (name: string) => Promise<JarvisReply>;
   volume: (direction: 'up' | 'down' | 'mute') => Promise<JarvisReply>;
+  /** Systemlautstärke auf einen festen Wert zwischen 0 und 100 setzen. */
+  setVolume?: (percent: number) => Promise<JarvisReply>;
   media: (action: 'playpause' | 'next' | 'previous') => Promise<JarvisReply>;
   lock: () => Promise<JarvisReply>;
 }
@@ -21,6 +25,8 @@ export interface JarvisContext {
   addTimer: (due: number, label: string, kind: 'timer' | 'alarm') => void;
   stopSpeaking: () => void;
   vision?: (question: string) => Promise<JarvisReply>;
+  /** Rückfrage vor riskanten lokalen Aktionen; fehlt sie, wird ohne gefragt. */
+  confirm?: (title: string, detail: string) => Promise<boolean>;
   voiceLabel: string;
   listening: boolean;
   startedAt: number;
@@ -287,9 +293,11 @@ export async function handleCommand(raw: string, ctx: JarvisContext): Promise<Ja
       speak:
         'Ich höre auf mein Weckwort. Ich nenne Uhrzeit und Datum, melde das Wetter, stelle Timer und Wecker, ' +
         'speichere und lese Notizen vor, merke mir Fakten und Vorlieben dauerhaft, rechne Aufgaben, öffne Webseiten, ' +
-        'starte Programme wie Chrome, Spotify oder den Rechner, stelle die Lautstärke, sperre den Bildschirm, ' +
+        'starte Programme wie Chrome, Spotify oder den Rechner, schließe sie wieder, stelle die Lautstärke ' +
+        'schrittweise oder auf einen festen Wert, sperre den Bildschirm, ' +
         'suche im Netz und nenne dabei die Quellen, beschreibe deinen Bildschirm und erzähle Witze. ' +
-        'Zum Beispiel: Öffne YouTube, öffne Notepad, suche auf YouTube nach Katzenvideos, suche auf Wikipedia nach Turing. ' +
+        'Zum Beispiel: Öffne YouTube, öffne Notepad, schließe Spotify, Lautstärke auf 30 Prozent, ' +
+        'suche auf YouTube nach Katzenvideos, suche auf Wikipedia nach Turing. ' +
         'Mit „Guten Morgen“ bekommst du einen Kurzbericht aus Wetter, Timern und Notizen, mit „Feierabend“ die Zusammenfassung des Tages. ' +
         'Sage zum Beispiel: Jarvis, Wetter in Hamburg. Oder: Jarvis, was steht auf dem Bildschirm? ' +
         'Und du kannst mich mitten im Satz unterbrechen — ich höre sofort auf.',
@@ -435,6 +443,22 @@ export async function handleCommand(raw: string, ctx: JarvisContext): Promise<Ja
     return { speak: 'Die Liste ist geleert.' };
   }
 
+  // Feste Lautstärke: „stelle die Lautstärke auf 30 Prozent“. Muss vor der
+  // Prozentrechnung stehen, sonst schluckt „30 Prozent“ den Befehl.
+  const levelMatch =
+    t.match(/(?:lautstärke|lautstaerke|volume|ton)\s+(?:auf\s+)?(\d{1,3})\s*(?:prozent|%)?/) ??
+    t.match(/^(\d{1,3})\s*(?:prozent|%)\s*(?:lautstärke|lautstaerke|volume)/);
+  if (levelMatch) {
+    const percent = Math.max(0, Math.min(100, Number(levelMatch[1])));
+    if (!ctx.desktop?.setVolume) {
+      return {
+        speak:
+          'Die Systemlautstärke kann ich nur in der Desktop-App setzen — im Browser regelt das dein Betriebssystem.',
+      };
+    }
+    return ctx.desktop.setVolume(percent);
+  }
+
   // Rechnen
   const percentMatch = t.match(/(\d+(?:[.,]\d+)?)\s*(?:prozent|%)\s*von\s*(\d+(?:[.,]\d+)?)/);
   if (percentMatch) {
@@ -486,6 +510,39 @@ export async function handleCommand(raw: string, ctx: JarvisContext): Promise<Ja
     if (/(nächster|naechster)/.test(t)) action = 'next';
     else if (/(vorheriger|letzter)/.test(t)) action = 'previous';
     return ctx.desktop ? ctx.desktop.media(action) : needsDesktop();
+  }
+
+  // Programm schließen – nur Desktop und nur nach Rückfrage.
+  const closeMatch =
+    text.match(
+      /^(?:schließe|schliesse|beende|kille)\s+(?:das\s+|die\s+|den\s+)?(?:programm\s+|app\s+|anwendung\s+)?(.+?)(?:\s+(?:zu|beenden|schließen|schliessen))?$/i,
+    ) ?? text.match(/^mach\s+(.+?)\s+zu$/i);
+  if (closeMatch) {
+    const target = closeMatch[1].replace(/[.!?]+$/, '').trim();
+    const lower = target
+      .toLowerCase()
+      .replace(/^(den|die|das)\s+/, '')
+      .trim();
+
+    if (!APP_WORDS.has(lower)) {
+      return { speak: `„${target}“ kenne ich nicht als Programm. Sage zum Beispiel: Schließe Spotify.` };
+    }
+    if (!ctx.desktop?.closeApp) {
+      return {
+        speak:
+          'Programme schließen kann ich nur in der Desktop-App — im Browser komme ich an andere Programme nicht heran.',
+      };
+    }
+
+    const name = capitalize(lower);
+    const confirmed = ctx.confirm
+      ? await ctx.confirm(
+          'Programm schließen',
+          `${name} wird beendet. Nicht gespeicherte Arbeit geht dabei verloren.`,
+        )
+      : true;
+    if (!confirmed) return { speak: 'Abgebrochen — ich lasse es offen.' };
+    return ctx.desktop.closeApp(name);
   }
 
   const programMatch = text.match(

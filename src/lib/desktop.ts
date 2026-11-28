@@ -307,6 +307,9 @@ export interface DesktopBridge {
   platform: string;
   onHotkey: (callback: () => void) => () => void;
   openApp: (name: string) => Promise<DesktopResult>;
+  closeApp?: (name: string) => Promise<DesktopResult>;
+  /** Systemlautstärke auf 0-100 Prozent setzen. */
+  setVolume?: (percent: number) => Promise<DesktopResult>;
   /** Browser leer = Standardbrowser des Systems. */
   openUrl?: (url: string, browser?: string) => Promise<DesktopResult>;
   volume: (direction: 'up' | 'down' | 'mute') => Promise<DesktopResult>;

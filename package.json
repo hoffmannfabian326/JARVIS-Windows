@@ -1,7 +1,7 @@
 {
   "name": "jarvis-voice-interface",
   "private": true,
-  "version": "0.1.0-alpha.8",
+  "version": "0.1.0-alpha.9",
   "description": "J.A.R.V.I.S. — deutscher Sprachassistent für Windows, macOS und Linux",
   "author": "J.A.R.V.I.S. Project",
   "type": "module",

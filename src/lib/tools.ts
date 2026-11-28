@@ -21,6 +21,7 @@ const CONFIRM_TOOLS = new Set([
   'add_note',
   'remember_fact',
   'open_app',
+  'close_app',
   'open_url',
   'control_volume',
   'control_media',
@@ -101,6 +102,12 @@ export function describeToolCall(name: string, args: Record<string, unknown>): T
       };
     case 'open_app':
       return { title: 'Programm starten', detail: clip(args.name, 60) || 'Kein Programmname.', risk: 'normal' };
+    case 'close_app':
+      return {
+        title: 'Programm schließen',
+        detail: `${clip(args.name, 60) || 'Kein Programmname.'} wird beendet — nicht gespeicherte Arbeit geht verloren.`,
+        risk: 'high',
+      };
     case 'open_url':
       return {
         title: 'Webseite öffnen',

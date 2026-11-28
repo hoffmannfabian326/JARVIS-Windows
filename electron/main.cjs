@@ -19,7 +19,15 @@ const {
   Notification,
   desktopCapturer,
 } = require('electron');
-const { mediaCommand, volumeCommand, lockCommand, openAppCommand, openUrlCommand } = require('./platform.cjs');
+const {
+  mediaCommand,
+  volumeCommand,
+  lockCommand,
+  openAppCommand,
+  openUrlCommand,
+  closeAppCommand,
+  setVolumeCommand,
+} = require('./platform.cjs');
 const { WakeEngine } = require('./wake/engine.cjs');
 const monitor = require('./monitor.cjs');
 const dictation = require('./dictation/index.cjs');
@@ -790,6 +798,10 @@ ipcMain.handle('jarvis:volume', (_event, direction) => runSpec(volumeCommand(dir
 ipcMain.handle('jarvis:media', (_event, action) => runSpec(mediaCommand(action)));
 ipcMain.handle('jarvis:lock', () => runSpec(lockCommand()));
 ipcMain.handle('jarvis:openApp', (_event, name) => runSpec(openAppCommand(name)));
+ipcMain.handle('jarvis:closeApp', (_event, name) => runSpec(closeAppCommand(name)));
+ipcMain.handle('jarvis:setVolume', (_event, percent) =>
+  runSpec(setVolumeCommand(percent, path.join(__dirname, 'volume', 'level.ps1'))),
+);
 
 // Links gehen an den in den Einstellungen gewählten Browser; ohne Auswahl
 // öffnet das System seinen Standardbrowser.

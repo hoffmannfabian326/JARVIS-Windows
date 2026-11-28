@@ -278,12 +278,109 @@ function openUrlCommand(url, browser, platform = process.platform) {
   };
 }
 
+/** Prozessnamen fürs Beenden unter Windows (erster Treffer gewinnt). */
+const PROCESS_NAMES = {
+  chrome: ['chrome.exe'],
+  'google chrome': ['chrome.exe'],
+  edge: ['msedge.exe'],
+  'microsoft edge': ['msedge.exe'],
+  firefox: ['firefox.exe'],
+  notepad: ['notepad.exe'],
+  editor: ['notepad.exe'],
+  // Der Rechner heißt je nach Windows-Version anders.
+  rechner: ['CalculatorApp.exe', 'Calculator.exe'],
+  taschenrechner: ['CalculatorApp.exe', 'Calculator.exe'],
+  calculator: ['CalculatorApp.exe', 'Calculator.exe'],
+  explorer: ['explorer.exe'],
+  dateimanager: ['explorer.exe'],
+  dateien: ['explorer.exe'],
+  terminal: ['WindowsTerminal.exe'],
+  powershell: ['powershell.exe'],
+  eingabeaufforderung: ['cmd.exe'],
+  cmd: ['cmd.exe'],
+  einstellungen: ['SystemSettings.exe'],
+  settings: ['SystemSettings.exe'],
+  taskmanager: ['Taskmgr.exe'],
+  'task-manager': ['Taskmgr.exe'],
+  paint: ['mspaint.exe'],
+  word: ['WINWORD.EXE'],
+  excel: ['EXCEL.EXE'],
+  powerpoint: ['POWERPNT.EXE'],
+  outlook: ['OUTLOOK.EXE'],
+  spotify: ['Spotify.exe'],
+  discord: ['Discord.exe'],
+  steam: ['steam.exe'],
+  vscode: ['Code.exe'],
+  'visual studio code': ['Code.exe'],
+  teams: ['ms-teams.exe', 'Teams.exe'],
+  zoom: ['Zoom.exe'],
+  telegram: ['Telegram.exe'],
+  whatsapp: ['WhatsApp.exe'],
+};
+
+/**
+ * Schließt ein laufendes Programm. Ohne /F, damit Windows den normalen
+ * Schließen-Weg geht und offene Dokumente nachfragen können.
+ */
+function closeAppCommand(name, platform = process.platform) {
+  const clean = String(name ?? '').trim();
+  if (!clean || clean.length > 60 || !/^[\p{L}\p{N} ._:\-]+$/u.test(clean)) {
+    return { error: 'invalid_name' };
+  }
+
+  const key = clean
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/^(den|die|das)\s+/, '')
+    .trim();
+
+  if (platform === 'darwin') {
+    const app = (APP_ALIASES.darwin || {})[key] || clean;
+    return { command: 'osascript', args: ['-e', `tell application "${app}" to quit`] };
+  }
+  if (platform === 'linux') {
+    const proc = (APP_ALIASES.linux || {})[key] || key.replace(/\s+/g, '-');
+    return { command: 'pkill', args: ['-TERM', '-x', proc] };
+  }
+
+  const names = PROCESS_NAMES[key];
+  if (!names) return { error: 'unknown_app' };
+  const spec = { command: 'taskkill', args: ['/IM', names[0]] };
+  if (names[1]) spec.fallback = { command: 'taskkill', args: ['/IM', names[1]] };
+  return spec;
+}
+
+/**
+ * Setzt die Systemlautstärke auf einen festen Prozentwert. Unter Windows
+ * übernimmt das ein PowerShell-Skript mit der CoreAudio-Schnittstelle;
+ * macOS und Linux haben dafür fertige Befehle.
+ */
+function setVolumeCommand(percent, scriptPath, platform = process.platform) {
+  const raw = Number(percent);
+  if (!Number.isFinite(raw)) return { error: 'invalid_level' };
+  const level = Math.max(0, Math.min(100, Math.round(raw)));
+
+  if (platform === 'darwin') {
+    return { command: 'osascript', args: ['-e', `set volume output volume ${level}`] };
+  }
+  if (platform === 'linux') {
+    return { command: 'pactl', args: ['set-sink-volume', '@DEFAULT_SINK@', `${level}%`] };
+  }
+  if (!scriptPath) return { error: 'missing_script' };
+  return {
+    command: 'powershell.exe',
+    args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', String(scriptPath), String(level)],
+  };
+}
+
 module.exports = {
   mediaCommand,
   volumeCommand,
   lockCommand,
   openAppCommand,
   openUrlCommand,
+  closeAppCommand,
+  setVolumeCommand,
   resolveAppName,
   safeUrl,
   SUPPORTED_BROWSERS,

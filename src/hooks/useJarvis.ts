@@ -856,6 +856,24 @@ export function useJarvis() {
         const result = await desktop.openApp(name);
         return { speak: result.ok ? `${name} wird gestartet.` : `Ich konnte ${name} nicht starten.` };
       },
+      closeApp: async (name) => {
+        const result = await desktop.closeApp?.(name);
+        if (!result) return { speak: 'Programme schließen geht nur in der Desktop-App.' };
+        return {
+          speak: result.ok
+            ? `${name} ist geschlossen.`
+            : `${name} läuft offenbar nicht — oder lässt sich nicht beenden.`,
+        };
+      },
+      setVolume: async (percent) => {
+        const result = await desktop.setVolume?.(percent);
+        if (!result) return { speak: 'Die Lautstärke lässt sich nur in der Desktop-App setzen.' };
+        return {
+          speak: result.ok
+            ? `Lautstärke auf ${percent} Prozent.`
+            : `Die Lautstärke ließ sich nicht auf ${percent} Prozent setzen.`,
+        };
+      },
       volume: async (direction) => {
         const result = await desktop.volume(direction);
         if (!result.ok) return { speak: 'Die Lautstärke ließ sich nicht ändern.' };
@@ -1204,6 +1222,18 @@ export function useJarvis() {
               : { ok: false, error: 'Das Programm ließ sich nicht starten.' };
           }
 
+          case 'close_app': {
+            if (!desktop?.closeApp) {
+              return { ok: false, error: 'Programme lassen sich nur in der Desktop-App schließen.' };
+            }
+            const name = String(args.name ?? '').trim().slice(0, 60);
+            if (!name) return { ok: false, error: 'Der Programmname fehlt.' };
+            const result = await desktop.closeApp(name);
+            return result.ok
+              ? { ok: true, programm: name, geschlossen: true }
+              : { ok: false, error: `${name} läuft nicht oder ließ sich nicht beenden.` };
+          }
+
           case 'open_url': {
             const url = httpUrl(args.url);
             if (!url) return { ok: false, error: 'Nur vollständige http- oder https-Adressen sind erlaubt.' };
@@ -1313,6 +1343,15 @@ export function useJarvis() {
         listening: !!engineRef.current?.isActive,
         startedAt,
         brainConfigured: Boolean(aiStatusRef.current?.configured),
+        // Rückfrage für lokale Befehle wie „Schließe Spotify“ über dieselbe
+        // Ja/Nein-Karte, die auch die KI-Werkzeuge nutzen.
+        confirm: (title: string, detail: string) =>
+          requestToolConfirm({
+            id: `bestaetigung-${Date.now()}`,
+            name: 'close_app',
+            args: {},
+            description: { title, detail, risk: 'high' },
+          }),
         vision: async (question: string) => {
           const result = await askVision(question, {
             onCapture: (info) => {

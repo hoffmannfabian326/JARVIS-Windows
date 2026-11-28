@@ -138,6 +138,22 @@ export const TOOL_DEFINITIONS = [
   {
     type: 'function',
     function: {
+      name: 'close_app',
+      description:
+        'Beendet ein laufendes Programm auf diesem Rechner. Nur auf ausdrückliche Anweisung; der Nutzer bestätigt vorher.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Programmname, z. B. Spotify, Chrome oder Notepad' },
+        },
+        required: ['name'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'open_url',
       description: 'Öffnet eine Webseite im Standardbrowser. Nur http- und https-Adressen.',
       parameters: {

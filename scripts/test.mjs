@@ -412,6 +412,37 @@ await test('Links öffnen im gewählten Browser, sonst im Systemstandard', () =>
   assert.equal(openUrlCommand('https://user:geheim@example.com', 'chrome', 'win32').error, 'invalid_url');
 });
 
+await test('Programme schließen und feste Lautstärke je System', () => {
+  const { closeAppCommand, setVolumeCommand } = require('../electron/platform.cjs');
+
+  const spotify = closeAppCommand('Spotify', 'win32');
+  assert.equal(spotify.command, 'taskkill');
+  assert.deepEqual(spotify.args, ['/IM', 'Spotify.exe']);
+
+  const calc = closeAppCommand('den Rechner', 'win32');
+  assert.deepEqual(calc.args, ['/IM', 'CalculatorApp.exe']);
+  assert.deepEqual(calc.fallback.args, ['/IM', 'Calculator.exe']);
+
+  const mac = closeAppCommand('Spotify', 'darwin');
+  assert.deepEqual(mac.args, ['-e', 'tell application "Spotify" to quit']);
+
+  assert.equal(closeAppCommand('Unbekannt', 'win32').error, 'unknown_app');
+  assert.equal(closeAppCommand('calc & del *.*', 'win32').error, 'invalid_name');
+
+  const win = setVolumeCommand(30, 'C:\\app\\volume\\level.ps1', 'win32');
+  assert.equal(win.command, 'powershell.exe');
+  assert.equal(win.args.at(-1), '30');
+  assert.equal(win.args.at(-2), 'C:\\app\\volume\\level.ps1');
+
+  assert.equal(setVolumeCommand(150, 'x.ps1', 'win32').args.at(-1), '100');
+  assert.equal(setVolumeCommand(-5, 'x.ps1', 'win32').args.at(-1), '0');
+  assert.equal(setVolumeCommand('abc', 'x.ps1', 'win32').error, 'invalid_level');
+  assert.equal(setVolumeCommand(30, '', 'win32').error, 'missing_script');
+
+  assert.deepEqual(setVolumeCommand(30, '', 'darwin').args, ['-e', 'set volume output volume 30']);
+  assert.deepEqual(setVolumeCommand(30, '', 'linux').args, ['set-sink-volume', '@DEFAULT_SINK@', '30%']);
+});
+
 /* ------------------------------------------------------------ Sprachausgabe */
 
 await test('Build enthält keine Windows-/Browser-Standardstimme', () => {

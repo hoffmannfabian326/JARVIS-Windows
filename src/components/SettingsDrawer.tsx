@@ -95,6 +95,7 @@ const TOOL_LABELS: Record<string, string> = {
   add_note: 'Notizen',
   remember_fact: 'Erinnerungen',
   open_app: 'Programme starten',
+  close_app: 'Programme schließen',
   control_volume: 'Lautstärke',
   control_media: 'Mediensteuerung',
 };
