@@ -262,6 +262,25 @@ const TOOL_LABELS: Record<string, string> = {
             />
             <span>Nach dem Weckwort kurz „Ja?“ antworten</span>
           </label>
+          <label className="field">
+            <span>
+              Nachfrage-Fenster{' '}
+              <b>{settings.followUpSeconds === 0 ? 'aus' : `${settings.followUpSeconds} s`}</b>
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="15"
+              step="1"
+              value={settings.followUpSeconds}
+              onChange={(event) => updateSettings({ followUpSeconds: Number(event.target.value) })}
+            />
+          </label>
+          <p className="field-hint">
+            Nach jeder Antwort bleibt das Mikrofon so viele Sekunden offen: Du kannst direkt weitersprechen, ohne das
+            Weckwort zu wiederholen. 0 schaltet das Fenster aus. In der Desktop-App öffnet Jarvis dafür kurz die
+            Spracherkennung; sagst du nichts, endet das Fenster von selbst.
+          </p>
           <p className="field-hint">
             Sprich das Weckwort allein oder direkt mit Befehl: „Jarvis, wie spät ist es?“ Nach dem Weckwort hast du
             neun Sekunden für den Befehl.

@@ -101,6 +101,10 @@ export default function App() {
     lastJarvis ||
     'Sage „Hey Jarvis“ oder tippe einen Befehl — ich melde mich, sobald du gerufen wirst.';
 
+  const followUpLeft = jarvis.followUpUntil ? Math.max(0, jarvis.followUpUntil - jarvis.now) : 0;
+  const followUpTotal = Math.max(1, jarvis.settings.followUpSeconds * 1000);
+  const followUpPercent = followUpLeft > 0 ? Math.min(100, (followUpLeft / followUpTotal) * 100) : 0;
+
   const activateOrb = () => {
     if (jarvis.speaking || jarvis.mode === 'thinking') {
       jarvis.cancelCurrent();
@@ -111,6 +115,16 @@ export default function App() {
 
   return (
     <div className={`app mode-${jarvis.mode}`}>
+      <div className="hud-frame" aria-hidden="true">
+        <span className="hud-corner hud-corner-tl" />
+        <span className="hud-corner hud-corner-tr" />
+        <span className="hud-corner hud-corner-bl" />
+        <span className="hud-corner hud-corner-br" />
+        <span className="hud-rail hud-rail-left" />
+        <span className="hud-rail hud-rail-right" />
+        <span className="hud-scan" />
+      </div>
+
       <TopBar
         mode={jarvis.mode}
         now={jarvis.now}
@@ -158,6 +172,8 @@ export default function App() {
           <>
             <div className="orb-wrap">
               <span className="orb-aura" aria-hidden="true" />
+              <span className="orb-ring" aria-hidden="true" />
+              <span className="orb-ticks" aria-hidden="true" />
               <ReactorCore mode={jarvis.mode} analyser={jarvis.analyser} onActivate={activateOrb} />
             </div>
 
@@ -167,6 +183,19 @@ export default function App() {
             </div>
 
             <p className={`core-caption ${jarvis.interim ? 'is-interim' : ''}`}>{caption}</p>
+
+            {followUpLeft > 0 && jarvis.mode === 'woken' ? (
+              <div className="follow-up" role="status" aria-live="polite">
+                <span className="follow-up-pulse" aria-hidden="true" />
+                <div className="follow-up-copy">
+                  <strong>Nachfrage-Fenster · noch {Math.ceil(followUpLeft / 1000)} s</strong>
+                  <span>Sprich einfach weiter — ohne „{jarvis.settings.wakeWord}“ zu sagen.</span>
+                </div>
+                <span className="follow-up-bar" aria-hidden="true">
+                  <i style={{ width: `${followUpPercent}%` }} />
+                </span>
+              </div>
+            ) : null}
           </>
         )}
       </main>

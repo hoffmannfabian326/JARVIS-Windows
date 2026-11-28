@@ -177,6 +177,8 @@ export function useJarvis() {
 
   const [engineActive, setEngineActive] = useState(false);
   const [recognitionError, setRecognitionError] = useState<string | null>(null);
+  // Ende des Nachfrage-Fensters als Zeitstempel; 0 = nicht offen.
+  const [followUpUntil, setFollowUpUntil] = useState(0);
   const [dictationMode, setDictationMode] = useState<boolean>(() => {
     try {
       return localStorage.getItem('jarvis.dictation') === '1';
@@ -224,6 +226,8 @@ export function useJarvis() {
   const streamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const wokenUntilRef = useRef(0);
+  // Öffnet in der Desktop-Hülle die kurze Aufnahme für das Nachfrage-Fenster.
+  const followUpCaptureRef = useRef<() => void>(() => {});
   const lastWakeRef = useRef(0);
   const busyRef = useRef(false);
   const speakingRef = useRef(false);
@@ -319,6 +323,41 @@ export function useJarvis() {
     resolve: (confirmed: boolean) => void;
     timer: ReturnType<typeof setTimeout>;
   } | null>(null);
+
+  /** Dauer des Nachfrage-Fensters aus den Einstellungen (0 = aus). */
+  const followUpWindowMs = useCallback(() => {
+    const seconds = Number(settingsRef.current.followUpSeconds);
+    if (!Number.isFinite(seconds)) return 0;
+    return Math.max(0, Math.min(20, Math.round(seconds))) * 1000;
+  }, []);
+
+  /**
+   * Öffnet das kurze Nachfrage-Fenster: Die nächste Äußerung gilt ohne
+   * Weckwort. Im Browser läuft die Erkennung ohnehin weiter, in der
+   * Desktop-Hülle wird eigens eine Aufnahme dafür gestartet.
+   */
+  const openFollowUp = useCallback(() => {
+    const ms = followUpWindowMs();
+    const desktop = getDesktop();
+    const canListen =
+      Boolean(engineRef.current?.isActive) ||
+      Boolean(
+        desktop &&
+          settingsRef.current.voiceCommands &&
+          (desktop.voiceCommand || desktop.sttStart),
+      );
+    if (!ms || !canListen || pendingToolRef.current) return 0;
+    const until = Date.now() + ms;
+    wokenUntilRef.current = until;
+    setFollowUpUntil(until);
+    changeMode('woken');
+    return ms;
+  }, [changeMode, followUpWindowMs]);
+
+  const clearFollowUp = useCallback(() => {
+    wokenUntilRef.current = 0;
+    setFollowUpUntil(0);
+  }, []);
 
   const settleTool = useCallback((confirmed: boolean) => {
     const pending = pendingToolRef.current;
@@ -1326,6 +1365,7 @@ export function useJarvis() {
       const canceled = () => cancelEpochRef.current !== epoch;
       busyRef.current = true;
       wokenUntilRef.current = 0;
+      setFollowUpUntil(0);
       setInterim('');
       changeMode('thinking');
       pushEntry({ role: 'user', text });
@@ -1436,6 +1476,7 @@ export function useJarvis() {
       if (canceled()) return;
 
       const assistantText = reply.text || reply.speak;
+      let spoke = false;
       const appendix = [
         { role: 'user' as const, content: text },
         ...(assistantText ? [{ role: 'assistant' as const, content: assistantText }] : []),
@@ -1471,13 +1512,31 @@ export function useJarvis() {
       }
 
       if (reply.speak) {
+        spoke = true;
         changeMode('speaking');
         await speak(reply.speak, true);
         if (canceled()) return;
       }
 
       busyRef.current = false;
-      changeMode(engineRef.current?.isActive ? 'wake' : 'off');
+
+      // Nachfrage-Fenster: Wer direkt weiterreden will, braucht kein Weckwort.
+      // Im Browser gilt es für die laufende Erkennung, in der Desktop-Hülle
+      // öffnet Jarvis dafür kurz das Mikrofon — aber nur nach einer Antwort
+      // und nicht, solange noch eine Timer-Ansage wartet.
+      const followUpMs = openFollowUp();
+      if (followUpMs && !recognitionSupported() && getDesktop()) {
+        if (spoke && pendingAnnouncementsRef.current.length === 0) {
+          followUpCaptureRef.current();
+        } else {
+          // Ohne gesprochene Antwort oder mit wartender Ansage bringt das
+          // Fenster in der Desktop-Hülle nichts — dann lieber normal weiter.
+          clearFollowUp();
+          changeMode('off');
+        }
+      } else if (!followUpMs) {
+        changeMode(engineRef.current?.isActive ? 'wake' : 'off');
+      }
       void drainAnnouncements();
     },
     [
@@ -1486,8 +1545,10 @@ export function useJarvis() {
       answerFreeform,
       buildDesktopActions,
       changeMode,
+      clearFollowUp,
       clearNotes,
       drainAnnouncements,
+      openFollowUp,
       pushEntry,
       flashNotice,
       speak,
@@ -1680,7 +1741,7 @@ export function useJarvis() {
   }, [changeMode, flashNotice]);
   startLocalRef.current = startLocalListening;
 
-  const captureVoiceCommand = useCallback(async () => {
+  const captureVoiceCommand = useCallback(async (silent = false) => {
     if (localSessionRef.current) return;
     if (busyRef.current && !speakingRef.current) {
       flashNotice('Ich verarbeite noch den letzten Befehl.');
@@ -1696,10 +1757,13 @@ export function useJarvis() {
       return;
     }
     changeMode('woken');
-    setNotice('Ich höre — sprich jetzt deinen Befehl.');
+    // Die stille Variante läuft im Nachfrage-Fenster; den Hinweis zeigt dort
+    // bereits die Oberfläche selbst.
+    if (!silent) setNotice('Ich höre — sprich jetzt deinen Befehl.');
     const result = await desktop.voiceCommand({ culture: settingsRef.current.lang || 'de-DE' });
     setNotice(null);
     if (!result.ok) {
+      clearFollowUp();
       changeMode(engineRef.current?.isActive ? 'wake' : 'off');
       if (result.error !== 'no-speech') {
         flashNotice(`Spracheingabe: ${result.error ?? 'unbekannter Fehler'}`);
@@ -1708,14 +1772,18 @@ export function useJarvis() {
     }
     const text = String(result.text ?? '').trim();
     if (!text) {
+      clearFollowUp();
       changeMode(engineRef.current?.isActive ? 'wake' : 'off');
       return;
     }
     flashNotice(`Verstanden: ${text}`, 4000);
     void execute(text);
-  }, [changeMode, execute, flashNotice]);
+  }, [changeMode, clearFollowUp, execute, flashNotice]);
   voiceCommandRef.current = () => {
     void captureVoiceCommand();
+  };
+  followUpCaptureRef.current = () => {
+    void captureVoiceCommand(true);
   };
 
   const activate = useCallback(() => {
@@ -2004,6 +2072,7 @@ export function useJarvis() {
     engine.start();
     changeMode('wake');
     wokenUntilRef.current = 0;
+    setFollowUpUntil(0);
     lastWakeRef.current = 0;
     await speak('Systeme online. Ich höre zu.', true);
   }, [changeMode, engine, initMic, speak]);
@@ -2021,6 +2090,7 @@ export function useJarvis() {
     speakerRef.current?.cancel();
     releaseSpeechWaiter();
     wokenUntilRef.current = 0;
+    setFollowUpUntil(0);
     setInterim('');
     setSpeaking(false);
     changeMode('off');
@@ -2244,6 +2314,7 @@ export function useJarvis() {
         void drainAnnouncements();
       }
       if (modeRef.current === 'woken' && Date.now() > wokenUntilRef.current) {
+        setFollowUpUntil(0);
         changeMode('wake');
         setInterim('');
       }
@@ -2274,6 +2345,7 @@ export function useJarvis() {
     settings,
     updateSettings,
     mode,
+    followUpUntil,
     engineActive,
     speaking,
     interim,

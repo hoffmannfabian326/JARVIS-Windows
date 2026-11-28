@@ -1,21 +1,9 @@
 import type { TelemetryState } from '../hooks/useTelemetry';
 import type { TelemetrySample } from '../lib/desktop';
+import { BarCluster, LevelColumn, RingGauge, TrendChart } from './HudInstruments';
 
 interface Props {
   telemetry: TelemetryState;
-}
-
-function Spark({ values }: { values: number[] }) {
-  if (values.length < 2) return <svg className="spark" viewBox="0 0 100 30" aria-hidden="true" />;
-  const step = 100 / (values.length - 1);
-  const points = values
-    .map((value, index) => `${(index * step).toFixed(1)},${(28 - Math.min(100, Math.max(0, value)) * 0.26).toFixed(1)}`)
-    .join(' ');
-  return (
-    <svg className="spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
-      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-    </svg>
-  );
 }
 
 function gb(bytes: number): string {
@@ -28,105 +16,71 @@ function mbit(bytesPerSecond: number): string {
   return `${mbitValue.toFixed(mbitValue >= 100 ? 0 : 1).replace('.', ',')} Mbit/s`;
 }
 
-function Metric({
-  icon,
-  name,
-  load,
-  temp,
-  meta,
-  values,
-  display,
-  showTemp = true,
-}: {
-  icon: string;
-  name: string;
-  load: number | null;
-  temp: number | null;
-  meta: string;
-  values: number[];
-  display?: string;
-  showTemp?: boolean;
-}) {
-  const width = load == null ? 0 : Math.min(100, Math.max(0, load));
-  return (
-    <div className="metric">
-      <span className="metric-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24">
-          <path d={icon} fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-        </svg>
-      </span>
-      <div className="metric-body">
-        <div className="metric-top">
-          <span className="metric-name">{name}</span>
-          <span className="metric-value">{display ?? (load == null ? '—' : `${load} %`)}</span>
-        </div>
-        <div className="metric-bar">
-          <span style={{ width: `${width}%` }} />
-        </div>
-        <div className="metric-meta">
-          {showTemp ? (
-            <span className="metric-temp">{temp == null ? 'Temp n/a' : `${temp} °C`}</span>
-          ) : null}
-          <span>{meta}</span>
-        </div>
-      </div>
-      <Spark values={values} />
-    </div>
-  );
+function tempText(value: number | null | undefined): string {
+  return value == null ? 'Temp n/a' : `${value} °C`;
 }
 
 function Body({ telemetry, sample }: { telemetry: TelemetryState; sample: TelemetrySample }) {
+  const mem = sample.mem;
+  const disk = sample.disk;
+  const net = sample.net;
+
   return (
-    <>
-      <Metric
-        icon="M7 7h10v10H7zM9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4"
-        name="CPU"
-        load={sample.cpu.load}
-        temp={sample.cpu.temp}
-        meta={sample.cpu.cores ? `${sample.cpu.cores} Kerne` : 'Kerne n/a'}
-        values={telemetry.history.cpu}
-      />
-      <Metric
-        icon="M3 8l9-4 9 4-9 4zM3 12l9 4 9-4M3 16l9 4 9-4"
-        name="GPU"
-        load={sample.gpu.load}
-        temp={sample.gpu.temp}
-        meta={sample.gpu.name ? sample.gpu.name.replace(/\(R\)|\(TM\)/g, '').trim().slice(0, 26) : 'nicht erkannt'}
-        values={telemetry.history.gpu}
-      />
-      <Metric
-        icon="M6 4h12v16H6zM9 8h6M9 12h6M9 16h3"
-        name="RAM"
-        load={sample.mem?.percent ?? null}
-        temp={null}
-                  meta={sample.mem ? `${gb(sample.mem.used)} / ${gb(sample.mem.total)}` : 'n/a'}
-          values={telemetry.history.mem}
-          showTemp={false}
+    <div className="tele-instruments">
+      <div className="tele-dials">
+        <RingGauge
+          label="CPU"
+          value={sample.cpu.load}
+          display={sample.cpu.load == null ? '—' : `${sample.cpu.load} %`}
+          spark={telemetry.history.cpu}
+          meta={`${tempText(sample.cpu.temp)} · ${sample.cpu.cores ? `${sample.cpu.cores} Kerne` : 'Kerne n/a'}`}
         />
-      {sample.disk ? (
-        <Metric
-          icon="M4 6h16v5H4zM4 13h16v5H4zM7 8.5h.1M7 15.5h.1"
-          name="Speicher"
-          load={sample.disk.percent}
-          temp={null}
-          meta={`${gb(sample.disk.used)} / ${gb(sample.disk.size)}`}
-          values={[]}
-          showTemp={false}
+        <RingGauge
+          label="GPU"
+          value={sample.gpu.load}
+          display={sample.gpu.load == null ? '—' : `${sample.gpu.load} %`}
+          spark={telemetry.history.gpu}
+          meta={
+            sample.gpu.name
+              ? `${tempText(sample.gpu.temp)} · ${sample.gpu.name.replace(/\(R\)|\(TM\)/g, '').trim().slice(0, 24)}`
+              : tempText(sample.gpu.temp)
+          }
+        />
+      </div>
+
+      <div className="tele-levels">
+        <LevelColumn
+          label="Arbeitsspeicher"
+          value={mem?.percent ?? null}
+          display={mem ? `${Math.round(mem.percent)} %` : '—'}
+          meta={mem ? `${gb(mem.used)} / ${gb(mem.total)}` : 'n/a'}
+        />
+        <LevelColumn
+          label="Datenträger"
+          value={disk?.percent ?? null}
+          display={disk ? `${Math.round(disk.percent)} %` : '—'}
+          meta={disk ? `${gb(disk.used)} / ${gb(disk.size)}` : 'n/a'}
+        />
+      </div>
+
+      <TrendChart
+        label="Verlauf"
+        series={[
+          { name: 'CPU', values: telemetry.history.cpu },
+          { name: 'GPU', values: telemetry.history.gpu },
+        ]}
+      />
+
+      {net ? (
+        <BarCluster
+          stream
+          label="Netzwerk"
+          display={`${mbit(net.down)} ↓`}
+          meta={`↑ ${mbit(net.up)}`}
+          steps={28}
         />
       ) : null}
-      {sample.net ? (
-        <Metric
-          icon="M3 9a13 13 0 0 1 18 0M6.5 12.5a8 8 0 0 1 11 0M10 16a3 3 0 0 1 4 0M12 19h.1"
-          name="Netzwerk"
-          load={null}
-          temp={null}
-          meta={`↑ ${mbit(sample.net.up)}`}
-          values={[]}
-          display={`${mbit(sample.net.down)} ↓`}
-          showTemp={false}
-        />
-      ) : null}
-    </>
+    </div>
   );
 }
 
@@ -140,6 +94,7 @@ export default function Telemetry({ telemetry }: Props) {
           <path d="M2 12h4l2-6 3 12 3-9 2 3h6" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
         </svg>
         <h2>System Telemetrie</h2>
+        <span className="panel-tag">live</span>
       </div>
 
       {!supported ? (

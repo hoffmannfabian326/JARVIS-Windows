@@ -300,7 +300,8 @@ export async function handleCommand(raw: string, ctx: JarvisContext): Promise<Ja
         'suche auf YouTube nach Katzenvideos, suche auf Wikipedia nach Turing. ' +
         'Mit „Guten Morgen“ bekommst du einen Kurzbericht aus Wetter, Timern und Notizen, mit „Feierabend“ die Zusammenfassung des Tages. ' +
         'Sage zum Beispiel: Jarvis, Wetter in Hamburg. Oder: Jarvis, was steht auf dem Bildschirm? ' +
-        'Und du kannst mich mitten im Satz unterbrechen — ich höre sofort auf.',
+        'Und du kannst mich mitten im Satz unterbrechen — ich höre sofort auf. ' +
+        'Nach einer Antwort bleibt ein kurzes Nachfrage-Fenster offen: In diesen Sekunden brauchst du das Weckwort nicht erneut zu sagen.',
     };
   }
 

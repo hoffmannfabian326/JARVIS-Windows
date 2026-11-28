@@ -1,6 +1,7 @@
 import type { BrainStatus } from '../lib/brain';
 import type { Mode } from '../types';
 import { formatClock, formatDateLong } from '../types';
+import { ScopeSweep } from './HudInstruments';
 
 interface Props {
   mode: Mode;
@@ -47,12 +48,22 @@ export default function TopBar({ mode, now, aiStatus, engineActive, onOpenSettin
     <header className="topbar">
       <div className="brand">
         <span className="brand-mark" aria-hidden="true">
+          <span className="brand-orbit" />
           <svg viewBox="0 0 48 48">
-            <circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" strokeWidth="1.2" opacity="0.55" />
-            <circle cx="24" cy="24" r="13" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.9" />
-            <circle cx="24" cy="24" r="5" fill="currentColor" />
-            <path d="M24 2v7M24 39v7M2 24h7M39 24h7" stroke="currentColor" strokeWidth="1.2" opacity="0.8" />
-            <path d="M10 10l4 4M34 34l4 4M38 10l-4 4M14 34l-4 4" stroke="currentColor" strokeWidth="0.9" opacity="0.5" />
+            <circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" strokeWidth="1.1" opacity="0.5" />
+            <circle
+              cx="24"
+              cy="24"
+              r="16.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="0.9"
+              opacity="0.85"
+              strokeDasharray="3 5"
+            />
+            <path d="M24 12.5 34.5 30.5h-21z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+            <path d="M24 20.5 28.6 28.5h-9.2z" fill="currentColor" opacity="0.9" />
+            <path d="M24 1v3.5M24 43.5V47M1 24h3.5M43.5 24H47" stroke="currentColor" strokeWidth="1" opacity="0.7" />
           </svg>
         </span>
         <div className="brand-text">
@@ -77,7 +88,7 @@ export default function TopBar({ mode, now, aiStatus, engineActive, onOpenSettin
         <Chip
           icon="M4 7h16v10H4zM8 21h8M12 17v4"
           label="KI-ANBIETER"
-          value={aiStatus?.configured ? 'Z.ai' : 'kein Key'}
+          value={aiStatus?.configured ? aiStatus.provider || 'KI' : 'kein Key'}
           tone={aiStatus?.configured ? 'ok' : 'off'}
         />
         <Chip
@@ -95,6 +106,7 @@ export default function TopBar({ mode, now, aiStatus, engineActive, onOpenSettin
       </div>
 
       <div className="top-right">
+        <ScopeSweep label="SCAN" tone={mode === 'thinking' ? 'warn' : 'ok'} />
         <div className="clock">
           <strong>{formatClock(now)}</strong>
           <span>{formatDateLong(now)}</span>

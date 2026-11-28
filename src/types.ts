@@ -26,6 +26,11 @@ export interface TimerItem {
 export interface Settings {
   wakeWord: string;
   autoAck: boolean;
+  /**
+   * Nach jeder Antwort so viele Sekunden ohne Weckwort weitersprechen.
+   * 0 schaltet das Nachfrage-Fenster ab.
+   */
+  followUpSeconds: number;
   lang: string;
   ttsEngine: 'piper' | 'elevenlabs';
   rate: number;
@@ -62,6 +67,7 @@ export interface MicInput {
 export const DEFAULT_SETTINGS: Settings = {
   wakeWord: 'jarvis',
   autoAck: true,
+  followUpSeconds: 6,
   lang: 'de-DE',
   ttsEngine: 'piper',
   rate: 1,

@@ -3,6 +3,7 @@ import App from './App';
 import ErrorBoundary from './components/ErrorScreen';
 import { installErrorHandlers } from './lib/diagnostics';
 import './styles.css';
+import './hud.css';
 
 installErrorHandlers();
 

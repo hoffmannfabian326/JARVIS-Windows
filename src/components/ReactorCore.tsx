@@ -15,6 +15,8 @@ const ACCENT: Record<Mode, string> = {
   speaking: '#fff0c9',
 };
 
+const TAU = Math.PI * 2;
+
 function rgba(hex: string, alpha: number): string {
   const clean = hex.replace('#', '');
   const value = parseInt(clean, 16);
@@ -24,6 +26,11 @@ function rgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+/**
+ * Der Reaktorkern nach dem HUD-Concept: Mikrometer-Ticks, ein Kranz aus
+ * ungleich langen Segmenten, Kupfer-Punktring, Radar-Sweep, Wellenform und
+ * eine rotierende Drahtgitter-Kugel in der Mitte.
+ */
 export default function ReactorCore({ mode, analyser, onActivate }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const phaseRef = useRef(0);
@@ -63,7 +70,7 @@ export default function ReactorCore({ mode, analyser, onActivate }: Props) {
       const accent = ACCENT[mode];
       const cx = width / 2;
       const cy = height / 2;
-      const R = Math.min(width, height) * 0.4;
+      const R = Math.min(width, height) * 0.335;
       const phase = phaseRef.current;
 
       if (analyser) {
@@ -82,64 +89,50 @@ export default function ReactorCore({ mode, analyser, onActivate }: Props) {
 
       ctx.clearRect(0, 0, width, height);
 
-      // Halo
-      const halo = ctx.createRadialGradient(cx, cy, R * 0.05, cx, cy, R * 1.55);
-      halo.addColorStop(0, rgba(accent, 0.2 + level * 0.18));
-      halo.addColorStop(0.42, rgba(accent, 0.06));
+      // Halo hinter dem gesamten Instrument
+      const halo = ctx.createRadialGradient(cx, cy, R * 0.05, cx, cy, R * 1.75);
+      halo.addColorStop(0, rgba(accent, 0.18 + level * 0.16));
+      halo.addColorStop(0.45, rgba(accent, 0.05));
       halo.addColorStop(1, 'rgba(0, 0, 0, 0)');
       ctx.fillStyle = halo;
       ctx.beginPath();
-      ctx.arc(cx, cy, R * 1.55, 0, Math.PI * 2);
+      ctx.arc(cx, cy, R * 1.75, 0, TAU);
       ctx.fill();
 
+      // Mikrometer-Ticks am äußeren Rand
       ctx.save();
       ctx.translate(cx, cy);
-
-      // Äußerer Skalenring
-      ctx.rotate(phase * 0.1);
-      ctx.strokeStyle = rgba(accent, 0.32);
-      for (let i = 0; i < 72; i += 1) {
-        const angle = (i / 72) * Math.PI * 2;
-        const major = i % 6 === 0;
+      ctx.rotate(phase * 0.07);
+      for (let i = 0; i < 96; i += 1) {
+        const angle = (i / 96) * TAU;
+        const major = i % 8 === 0;
+        const mid = i % 4 === 0;
+        const outer = R * 1.46;
+        const inner = R * (major ? 1.36 : mid ? 1.39 : 1.41);
         ctx.beginPath();
-        ctx.moveTo(Math.cos(angle) * R * 1.33, Math.sin(angle) * R * 1.33);
-        ctx.lineTo(
-          Math.cos(angle) * R * (major ? 1.42 : 1.37),
-          Math.sin(angle) * R * (major ? 1.42 : 1.37),
-        );
-        ctx.lineWidth = major ? 1.4 : 0.6;
+        ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+        ctx.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
+        ctx.lineWidth = major ? 1.4 : 0.55;
+        ctx.strokeStyle = rgba(accent, major ? 0.6 : mid ? 0.34 : 0.2);
         ctx.stroke();
       }
       ctx.restore();
 
-      // Kreissegment-Abschnitte
+      // Segmentkranz aus ungleich langen Blöcken
       ctx.save();
       ctx.translate(cx, cy);
-      ctx.rotate(-phase * 0.5);
-      ctx.strokeStyle = rgba(accent, 0.55);
-      ctx.lineWidth = 1.6;
-      ctx.lineCap = 'round';
-      for (let i = 0; i < 4; i += 1) {
-        const start = (i / 4) * Math.PI * 2;
+      ctx.rotate(-phase * 0.15);
+      const blocks = 56;
+      for (let i = 0; i < blocks; i += 1) {
+        const angle = (i / blocks) * TAU;
+        const span = 0.05 + (Math.sin(i * 1.7) + 1) * 0.022;
+        const inner = R * 1.19;
+        const outer = R * (1.26 + (Math.sin(i * 0.9 + phase * 0.5) + 1) * 0.035 + level * 0.05);
         ctx.beginPath();
-        ctx.arc(0, 0, R * 1.1, start, start + 0.9);
-        ctx.stroke();
-      }
-      ctx.restore();
-
-      // Radar-Sweep
-      ctx.save();
-      ctx.translate(cx, cy);
-      const createConic = (ctx as any).createConicGradient;
-      if (typeof createConic === 'function') {
-        const sweep = createConic.call(ctx, -phase * 1.4, 0, 0);
-        sweep.addColorStop(0, rgba(accent, 0));
-        sweep.addColorStop(0.12, rgba(accent, 0.16 + level * 0.1));
-        sweep.addColorStop(0.19, rgba(accent, 0));
-        sweep.addColorStop(1, rgba(accent, 0));
-        ctx.fillStyle = sweep;
-        ctx.beginPath();
-        ctx.arc(0, 0, R * 1.06, 0, Math.PI * 2);
+        ctx.arc(0, 0, outer, angle, angle + span);
+        ctx.arc(0, 0, inner, angle + span, angle, true);
+        ctx.closePath();
+        ctx.fillStyle = rgba(accent, 0.16 + (Math.sin(i * 0.6 - phase * 1.3) + 1) * 0.14);
         ctx.fill();
       }
       ctx.restore();
@@ -147,12 +140,55 @@ export default function ReactorCore({ mode, analyser, onActivate }: Props) {
       // Gestrichelter Orbit
       ctx.save();
       ctx.translate(cx, cy);
-      ctx.rotate(-phase * 0.28);
-      ctx.setLineDash([2, 11]);
-      ctx.strokeStyle = rgba(accent, 0.5);
+      ctx.rotate(-phase * 0.26);
+      ctx.setLineDash([2, 10]);
+      ctx.strokeStyle = rgba(accent, 0.46);
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(0, 0, R * 1.19, 0, Math.PI * 2);
+      ctx.arc(0, 0, R * 1.1, 0, TAU);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      // Radar-Sweep
+      ctx.save();
+      ctx.translate(cx, cy);
+      const createConic = (ctx as any).createConicGradient;
+      if (typeof createConic === 'function') {
+        const sweep = createConic.call(ctx, -phase * 1.3, 0, 0);
+        sweep.addColorStop(0, rgba(accent, 0));
+        sweep.addColorStop(0.1, rgba(accent, 0.14 + level * 0.12));
+        sweep.addColorStop(0.17, rgba(accent, 0));
+        sweep.addColorStop(1, rgba(accent, 0));
+        ctx.fillStyle = sweep;
+        ctx.beginPath();
+        ctx.arc(0, 0, R * 1.05, 0, TAU);
+        ctx.fill();
+
+        const beam = ctx.createLinearGradient(0, 0, 0, -R * 1.05);
+        beam.addColorStop(0, rgba(accent, 0.5));
+        beam.addColorStop(1, rgba(accent, 0));
+        ctx.strokeStyle = beam;
+        ctx.lineWidth = 1;
+        ctx.save();
+        ctx.rotate(phase * 1.3);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(0, -R * 1.05);
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.restore();
+
+      // Kupfer-Punktring (Gegenspieler zum Segmentkranz)
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(phase * 0.18);
+      ctx.setLineDash([1, 6]);
+      ctx.strokeStyle = 'rgba(224, 138, 60, 0.65)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.arc(0, 0, R * 0.78, 0, TAU);
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.restore();
@@ -165,15 +201,15 @@ export default function ReactorCore({ mode, analyser, onActivate }: Props) {
       for (let i = 0; i <= points; i += 1) {
         const sample = wave[Math.floor((i / points) * (wave.length - 1))] ?? 128;
         const v = (sample - 128) / 128;
-        const angle = (i / points) * Math.PI * 2 - Math.PI / 2;
-        const radius = R * 0.885 - v * R * 0.16 * (0.5 + level * 1.8);
+        const angle = (i / points) * TAU - Math.PI / 2;
+        const radius = R * 0.93 - v * R * 0.16 * (0.5 + level * 1.8);
         const x = Math.cos(angle) * radius;
         const y = Math.sin(angle) * radius;
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
       ctx.closePath();
-      ctx.strokeStyle = rgba(accent, 0.9);
+      ctx.strokeStyle = rgba(accent, 0.85);
       ctx.lineWidth = 1.3;
       ctx.shadowColor = rgba(accent, 0.8);
       ctx.shadowBlur = 8;
@@ -181,54 +217,102 @@ export default function ReactorCore({ mode, analyser, onActivate }: Props) {
       ctx.shadowBlur = 0;
       ctx.restore();
 
-      // Kern
+      // Drahtgitter-Kugel: Längengrade, Breitengrade, Knoten
       ctx.save();
       ctx.translate(cx, cy);
-      const pulse = 1 + Math.sin(phase * 2.1) * 0.02 + level * 0.3;
-      const coreR = R * 0.46 * pulse;
-      const core = ctx.createRadialGradient(0, 0, coreR * 0.05, 0, 0, coreR);
-      core.addColorStop(0, rgba('#ffffff', 0.85));
-      core.addColorStop(0.18, rgba(accent, 0.85));
-      core.addColorStop(0.52, rgba(accent, 0.24));
-      core.addColorStop(1, rgba(accent, 0));
-      ctx.fillStyle = core;
+      const pulse = 1 + Math.sin(phase * 2.1) * 0.02 + level * 0.24;
+      const coreR = R * 0.5 * pulse;
+
+      const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, coreR * 1.15);
+      glow.addColorStop(0, rgba('#fff6e6', 0.5));
+      glow.addColorStop(0.3, rgba(accent, 0.34));
+      glow.addColorStop(1, rgba(accent, 0));
+      ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.arc(0, 0, coreR, 0, Math.PI * 2);
+      ctx.arc(0, 0, coreR * 1.15, 0, TAU);
       ctx.fill();
 
-      ctx.strokeStyle = rgba(accent, 0.55);
+      ctx.strokeStyle = rgba(accent, 0.32);
+      ctx.lineWidth = 0.8;
+
+      for (let i = 1; i < 5; i += 1) {
+        const y = -coreR + (i / 5) * coreR * 2;
+        const rx = Math.sqrt(Math.max(0, coreR * coreR - y * y));
+        ctx.beginPath();
+        ctx.ellipse(0, y, rx, rx * 0.18, 0, 0, TAU);
+        ctx.stroke();
+      }
+
+      for (let i = 0; i < 3; i += 1) {
+        const spin = phase * 0.3 + (i * Math.PI) / 3;
+        const rx = Math.abs(Math.cos(spin)) * coreR;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, rx, coreR, 0, 0, TAU);
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = rgba('#fff1d8', 0.75);
+      for (let i = 0; i < 10; i += 1) {
+        const angle = phase * 0.5 + (i / 10) * TAU;
+        const latitude = Math.sin(i * 1.3 + phase * 0.4) * coreR * 0.7;
+        const radius = Math.sqrt(Math.max(0, coreR * coreR - latitude * latitude));
+        const x = Math.cos(angle) * radius;
+        const y = latitude;
+        ctx.beginPath();
+        ctx.arc(x, y, i % 3 === 0 ? 1.5 : 0.9, 0, TAU);
+        ctx.fill();
+      }
+
+      ctx.strokeStyle = rgba(accent, 0.45);
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(0, 0, R * 0.4, 0, Math.PI * 2);
+      ctx.arc(0, 0, coreR, 0, TAU);
       ctx.stroke();
+      ctx.restore();
 
-      // Fadenkreuz
-      ctx.strokeStyle = rgba(accent, 0.4);
+      // Fadenkreuz und umlaufende Satelliten
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.strokeStyle = rgba(accent, 0.42);
       for (let i = 0; i < 4; i += 1) {
         ctx.save();
-        ctx.rotate((i / 4) * Math.PI * 2 + phase * 0.2);
+        ctx.rotate((i / 4) * TAU + phase * 0.2);
         ctx.beginPath();
-        ctx.moveTo(R * 0.5, 0);
-        ctx.lineTo(R * 0.56, 0);
+        ctx.moveTo(R * 0.54, 0);
+        ctx.lineTo(R * 0.62, 0);
         ctx.stroke();
         ctx.restore();
+      }
+
+      for (let i = 0; i < 3; i += 1) {
+        const angle = phase * (0.5 + i * 0.17) + (i / 3) * TAU;
+        const radius = R * (1.13 + i * 0.035);
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius;
+        ctx.fillStyle = rgba(accent, 0.85);
+        ctx.shadowColor = rgba(accent, 0.9);
+        ctx.shadowBlur = 6;
+        ctx.beginPath();
+        ctx.arc(x, y, 1.8, 0, TAU);
+        ctx.fill();
+        ctx.shadowBlur = 0;
       }
       ctx.restore();
 
       // Umlaufende Beschriftung
-      const label = 'J.A.R.V.I.S. · MARK VII · VOICE LINK · ';
+      const label = 'J.A.R.V.I.S. · MARK VIII · NEURAL LINK · ';
       const chars = [...label];
       ctx.save();
       ctx.translate(cx, cy);
-      ctx.font = '9px "JetBrains Mono", monospace';
-      ctx.fillStyle = rgba(accent, 0.45);
+      ctx.font = '8.5px "JetBrains Mono", monospace';
+      ctx.fillStyle = rgba(accent, 0.42);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       chars.forEach((char, index) => {
-        const angle = (index / chars.length) * Math.PI * 2 + phase * 0.05 - Math.PI / 2;
+        const angle = (index / chars.length) * TAU + phase * 0.05 - Math.PI / 2;
         ctx.save();
         ctx.rotate(angle);
-        ctx.translate(0, -R * 1.21);
+        ctx.translate(0, -R * 1.24);
         ctx.fillText(char, 0, 0);
         ctx.restore();
       });
