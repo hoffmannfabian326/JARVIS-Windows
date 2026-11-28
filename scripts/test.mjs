@@ -386,6 +386,10 @@ await test('Build enthält keine Windows-/Browser-Standardstimme', () => {
 /* ---------------------------------------------------------------- Weckwort */
 
 await test('Weckwort-Engine lädt Modelle über eine file:-URL', async () => {
+  // Die Modelle liegen bewusst nicht im Repo (~103 MB); der Release-Workflow
+  // lädt sie vorher. Ohne Modelle gibt es hier nichts zu prüfen.
+  if (!existsSync(join(root, 'models', 'melspectrogram.onnx'))) return;
+
   const { WakeEngine } = require('../electron/wake/engine.cjs');
   const engine = new WakeEngine({ modelsDir: join(root, 'models') });
   const ready = await engine.init();
