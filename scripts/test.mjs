@@ -704,6 +704,70 @@ await test('Bildfrage erreicht das Bildmodell und liefert eine Antwort', async (
   }
 });
 
+await test('Gemini bekommt hohe Denkstufe und ein eigenes Ausgabelimit', async () => {
+  const seen = [];
+  const mock = createServer((req, res) => {
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += chunk;
+    });
+    req.on('end', () => {
+      seen.push(raw ? JSON.parse(raw) : null);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ choices: [{ message: { content: 'Bereit.' } }] }));
+    });
+  });
+  await new Promise((resolve) => mock.listen(0, '127.0.0.1', resolve));
+  const mockPort = mock.address().port;
+
+  const dir = tempDir('jarvis-gemini-tuning-');
+  const envFile = join(dir, '.env');
+  writeFileSync(envFile, 'AI_PROVIDER=gemini\nGEMINI_API_KEY=test-key\n');
+  const port = 23500 + Math.floor(Math.random() * 300);
+
+  const child = spawn(process.execPath, ['server.mjs'], {
+    cwd: root,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      JARVIS_ENV_FILE: envFile,
+      AI_API_BASE: `http://127.0.0.1:${mockPort}`,
+      AI_MODEL: '',
+      AI_VISION_MODEL: '',
+    },
+    stdio: 'ignore',
+  });
+
+  try {
+    let health = null;
+    for (let attempt = 0; attempt < 40 && !health; attempt += 1) {
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/api/health`);
+        if (response.ok) health = await response.json();
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+    assert.ok(health, 'Server wurde nicht erreichbar');
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: 'Hallo' }),
+    });
+    assert.equal(response.status, 200);
+
+    const body = seen.at(-1);
+    assert.equal(body.model, 'gemini-4-hydrogen');
+    assert.equal(body.reasoning_effort, 'high');
+    assert.equal(body.max_tokens, 8192);
+  } finally {
+    child.kill();
+    mock.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 await test('Werkzeug-Aufruf geht an den Client und die Antwort kommt zurück', async () => {
   const requests = [];
   const mock = createServer((req, res) => {

@@ -54,6 +54,11 @@ const PROVIDERS = {
     base: 'https://generativelanguage.googleapis.com/v1beta/openai',
     model: 'gemini-4-hydrogen',
     vision: 'gemini-4-hydrogen',
+    // Hydrogen denkt vor der Antwort. Die höchste Denkstufe hilft bei
+    // Werkzeugketten; ihre Tokens zählen beim Ausgabelimit mit, deshalb 8192
+    // statt der knappen Sprachbudgets (das Modell kann bis 64K ausgeben).
+    reasoning: 'high',
+    maxOutput: 8192,
   },
   zai: {
     name: 'Z.ai',
@@ -72,7 +77,27 @@ const PROVIDERS = {
   },
 };
 
-const config = { key: '', base: '', model: '', provider: '', providerId: '', vision: '', local: false };
+/**
+ * Denkstufe und Ausgabelimit gelten nur für das vorgesehene Modell: Wer
+ * AI_MODEL überschreibt, bekommt keine Parameter, die dort nicht hingehören.
+ */
+function presetTuning(id, model) {
+  const preset = PROVIDERS[id];
+  if (!preset || !preset.model || model !== preset.model) return { reasoning: '', maxOutput: 0 };
+  return { reasoning: preset.reasoning || '', maxOutput: preset.maxOutput || 0 };
+}
+
+const config = {
+  key: '',
+  base: '',
+  model: '',
+  provider: '',
+  providerId: '',
+  vision: '',
+  reasoning: '',
+  maxOutput: 0,
+  local: false,
+};
 let chain = [];
 let searchConfig = resolveSearchConfig({ ...fileEnv, ...process.env });
 const cooldowns = new Map();
@@ -114,13 +139,15 @@ function providerConfig(id, read) {
   if (!preset) return null;
   const key = read(preset.key);
   if (!key) return null;
+  const model = read('AI_MODEL') || preset.model;
   return {
     providerId: id,
     provider: preset.name,
     key,
     base: (read('AI_API_BASE') || preset.base).replace(/\/+$/, ''),
-    model: read('AI_MODEL') || preset.model,
+    model,
     vision: read('AI_VISION_MODEL') || preset.vision || '',
+    ...presetTuning(id, model),
     local: false,
   };
 }
@@ -159,6 +186,8 @@ function refreshConfig({ log = true } = {}) {
   config.base = first?.base || '';
   config.model = first?.model || '';
   config.vision = first?.vision || '';
+  config.reasoning = first?.reasoning || '';
+  config.maxOutput = first?.maxOutput || 0;
   config.local = Boolean(first?.local);
   searchConfig = resolveSearchConfig({ ...readEnvFile(), ...process.env });
 
@@ -422,21 +451,40 @@ function directSearchQuery(question) {
   return query && query.length >= 2 ? query.slice(0, 200) : '';
 }
 
+/**
+ * Gemeinsamer Anfragekörper. Anbieter mit Denkstufe bekommen
+ * `reasoning_effort` und ihr eigenes Ausgabelimit, alle anderen das knappe
+ * Sprachbudget des Aufrufers.
+ */
+function requestBody(
+  effective,
+  messages,
+  { withTools, maxTokens, temperature, stream = false, withUsage = false },
+) {
+  const body = {
+    model: effective.model,
+    messages,
+    max_tokens: effective.maxOutput || maxTokens,
+    temperature,
+  };
+  if (effective.reasoning) body.reasoning_effort = effective.reasoning;
+  if (stream) {
+    body.stream = true;
+    if (withUsage) body.stream_options = { include_usage: true };
+  }
+  if (withTools) {
+    body.tools = TOOL_DEFINITIONS;
+    body.tool_choice = 'auto';
+  }
+  return body;
+}
+
 async function chatCompletion(
   effective,
   messages,
   { withTools = true, maxTokens = 260, temperature = 0.45 } = {},
 ) {
-  const payload = {
-    model: effective.model,
-    messages,
-    max_tokens: maxTokens,
-    temperature,
-  };
-  if (withTools) {
-    payload.tools = TOOL_DEFINITIONS;
-    payload.tool_choice = 'auto';
-  }
+  const payload = requestBody(effective, messages, { withTools, maxTokens, temperature });
 
   const response = await fetch(`${effective.base}/chat/completions`, {
     method: 'POST',
@@ -486,18 +534,13 @@ async function chatCompletionStream(
   onDelta,
 ) {
   const send = async (withUsage) => {
-    const payload = {
-      model: effective.model,
-      messages,
-      max_tokens: maxTokens,
+    const payload = requestBody(effective, messages, {
+      withTools,
+      maxTokens,
       temperature,
       stream: true,
-      ...(withUsage ? { stream_options: { include_usage: true } } : {}),
-    };
-    if (withTools) {
-      payload.tools = TOOL_DEFINITIONS;
-      payload.tool_choice = 'auto';
-    }
+      withUsage,
+    });
     return fetch(`${effective.base}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -772,8 +815,9 @@ const server = createServer(async (req, res) => {
                 ],
               },
             ],
-            max_tokens: 320,
+            max_tokens: effective.maxOutput || 320,
             temperature: 0.3,
+            ...(effective.reasoning ? { reasoning_effort: effective.reasoning } : {}),
           }),
           signal: AbortSignal.timeout(30_000),
         });
