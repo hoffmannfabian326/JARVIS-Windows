@@ -1,0 +1,16 @@
+node_modules/
+dist/
+release/
+.env
+.env.local
+*.log
+llm-usage.json
+tsconfig.tsbuildinfo
+.DS_Store
+artifacts/
+reference/
+
+# Modelle und Piper holt der Release-Workflow aus gepinnten Quellen
+# (zusammen ~103 MB, gehören nicht ins Repository).
+models/
+piper/

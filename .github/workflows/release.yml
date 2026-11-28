@@ -1,0 +1,170 @@
+# Baut JARVIS auf windows-latest und laedt Setup, Blockmap und latest.yml ins
+# oeffentliche Release-Repo (hoffmannfabian326/JARVIS-Windows).
+#
+# Ausloeser ist allein ein Tag-Push:
+#   git tag v0.1.0-alpha.5 && git push origin v0.1.0-alpha.5
+# Die Version kommt aus dem Tag. models/ und piper/ liegen nicht im Repo: der
+# Workflow laedt sie von ihren offiziellen Quellen, festgenagelt per Prüfsumme,
+# damit jeder Build dieselben Dateien bekommt.
+#
+# Quell- und Release-Repo sind dasselbe, deshalb genuegt das eingebaute
+# GITHUB_TOKEN mit "contents: write" (siehe permissions unten). Kein Extra-Secret noetig.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  RELEASES_OWNER: hoffmannfabian326
+  RELEASES_REPO: JARVIS-Windows
+
+jobs:
+  release:
+    name: Windows-Build und Upload
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Quelltext holen
+        uses: actions/checkout@v4
+
+      - name: Node einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Abhängigkeiten installieren
+        run: npm ci
+
+      - name: Modelle laden
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $ws = $env:GITHUB_WORKSPACE
+
+          # Quellen und Prüfsummen sind festgeschrieben. Weicht upstream ab,
+          # bricht der Lauf hier ab, statt unbemerkt andere Modelle
+          # auszuliefern. Herkunft: siehe build/NOTICE-models.md und
+          # build/NOTICE-piper.md.
+          $wake = 'https://github.com/dscripka/openWakeWord/releases/download/v0.5.1'
+          $voice = 'https://huggingface.co/rhasspy/piper-voices/resolve/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/de/de_DE/thorsten/medium'
+          $piperZipUrl = 'https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip'
+
+          $downloads = @(
+            @{ Path = 'models/hey_jarvis_v0.1.onnx'; Url = "$wake/hey_jarvis_v0.1.onnx"; Sha = '94a13cfe60075b132f6a472e7e462e8123ee70861bc3fb58434a73712ee0d2cb' }
+            @{ Path = 'models/melspectrogram.onnx'; Url = "$wake/melspectrogram.onnx"; Sha = 'ba2b0e0f8b7b875369a2c89cb13360ff53bac436f2895cced9f479fa65eb176f' }
+            @{ Path = 'models/embedding_model.onnx'; Url = "$wake/embedding_model.onnx"; Sha = '70d164290c1d095d1d4ee149bc5e00543250a7316b59f31d056cff7bd3075c1f' }
+            @{ Path = 'models/piper/de_DE-thorsten-medium.onnx'; Url = "$voice/de_DE-thorsten-medium.onnx"; Sha = '7e64762d8e5118bb578f2eea6207e1a35a8e0c30595010b666f983fc87bb7819' }
+            @{ Path = 'models/piper/de_DE-thorsten-medium.onnx.json'; Url = "$voice/de_DE-thorsten-medium.onnx.json"; Sha = '974adee790533adb273a1ac88f49027d2a1b8f0f2cf4905954a4791e79264e85' }
+          )
+          foreach ($item in $downloads) {
+            $target = Join-Path $ws $item.Path
+            New-Item -ItemType Directory -Force -Path (Split-Path $target) | Out-Null
+            Invoke-WebRequest -Uri $item.Url -OutFile $target -UseBasicParsing
+            $hash = (Get-FileHash -Path $target -Algorithm SHA256).Hash.ToLower()
+            if ($hash -ne $item.Sha) { throw "Prüfsumme falsch für $($item.Path): $hash" }
+          }
+
+          # Piper samt DLLs und espeak-Daten (MIT). Das Zip hat einen Ordner piper/.
+          $zip = Join-Path $env:RUNNER_TEMP 'piper.zip'
+          Invoke-WebRequest -Uri $piperZipUrl -OutFile $zip -UseBasicParsing
+          $hash = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne 'f3c58906402b24f3a96d92145f58acba6d86c9b5db896d207f78dc80811efcea') {
+            throw "piper_windows_amd64.zip hat eine andere Prüfsumme: $hash"
+          }
+          Expand-Archive -Path $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'piper') -Force
+          Move-Item -Path (Join-Path $env:RUNNER_TEMP 'piper/piper') -Destination (Join-Path $ws 'piper')
+
+          Copy-Item (Join-Path $ws 'build/NOTICE-models.md') (Join-Path $ws 'models/NOTICE.md')
+          Copy-Item (Join-Path $ws 'build/NOTICE-piper.md') (Join-Path $ws 'piper/NOTICE.md')
+          Write-Host "Modelle bereit: $((Get-ChildItem (Join-Path $ws 'models') -Recurse -File).Count) Dateien in models, $((Get-ChildItem (Join-Path $ws 'piper') -Recurse -File).Count) in piper."
+
+      - name: Version aus Tag setzen
+        id: version
+        shell: pwsh
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          $version = $env:REF_NAME.Trim() -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$') {
+            throw "Ungültige Version '$version'. Erwartet wird z. B. v0.1.0-alpha.4."
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          npm version $version --no-git-tag-version --allow-same-version
+
+      - name: Selbsttests
+        run: npm test
+
+      - name: Installer bauen
+        run: npm run release:dry
+        env:
+          # Unsigned Alpha: keine Zertifikatssuche, keine Signaturversuche.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Assets prüfen
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $setup = "release/JARVIS-Alpha-$env:VERSION-win-x64-Setup.exe"
+          foreach ($file in @($setup, "$setup.blockmap", 'release/latest.yml')) {
+            if (-not (Test-Path $file)) { throw "Fehlt nach dem Build: $file" }
+          }
+          $pattern = '^version:\s*' + [regex]::Escape($env:VERSION) + '\s*$'
+          if (-not (Select-String -Path release/latest.yml -Pattern $pattern -Quiet)) {
+            throw "latest.yml passt nicht zu Version $env:VERSION."
+          }
+          # Gegenprobe: Modelle, Stimme und Piper müssen im Build stecken.
+          $packed = 'release/win-unpacked/resources'
+          foreach ($relative in @('models/hey_jarvis_v0.1.onnx', 'models/piper/de_DE-thorsten-medium.onnx', 'piper/piper.exe')) {
+            if (-not (Test-Path (Join-Path $packed $relative))) { throw "Fehlt im Build: resources/$relative" }
+          }
+
+      - name: Release hochladen
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_OWNER: ${{ env.RELEASES_OWNER }}
+          GH_RELEASES_REPO: ${{ env.RELEASES_REPO }}
+          GH_TAG: ${{ github.ref_name }}
+        run: node scripts/publish-release.mjs
+
+      - name: Öffentlichen Kanal prüfen
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          $url = "https://github.com/$env:RELEASES_OWNER/$env:RELEASES_REPO/releases/download/$env:TAG/latest.yml"
+          $pattern = 'version:\s*' + [regex]::Escape($env:VERSION) + '\s*(\r?\n|$)'
+          for ($attempt = 1; $attempt -le 5; $attempt++) {
+            try {
+              if ((Invoke-WebRequest $url -UseBasicParsing -TimeoutSec 20).Content -match $pattern) {
+                Write-Host "Kanal in Ordnung: $env:VERSION"
+                exit 0
+              }
+            } catch { }
+            Start-Sleep -Seconds 5
+          }
+          throw "latest.yml unter $url meldet nicht $env:VERSION."
+
+      # Nur bei Fehler: die Ausgaben bleiben sieben Tage als Download liegen.
+      - name: Build-Ausgaben sichern
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-ausgaben-${{ github.run_number }}
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/*.yml
+            dist/
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 0

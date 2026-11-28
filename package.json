@@ -1,0 +1,45 @@
+{
+  "name": "jarvis-voice-interface",
+  "private": true,
+  "version": "0.1.0-alpha.4",
+  "description": "J.A.R.V.I.S. — deutscher Sprachassistent für Windows, macOS und Linux",
+  "author": "J.A.R.V.I.S. Project",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite",
+    "dev:api": "node server.mjs",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 3000",
+    "desktop": "npm run build && electron .",
+    "desktop:dev": "electron . --dev",
+    "icon": "node scripts/make-icon.mjs && node scripts/make-ico.mjs",
+    "test": "node scripts/test.mjs",
+    "test:wake": "node scripts/wake-selftest.mjs",
+    "pack:win": "electron-builder --win --dir --x64",
+    "dist:win": "npm run release:win",
+    "dist:win:parts": "npm run build && node scripts/make-ico.mjs && npm run pack:win && node scripts/build-installer.mjs",
+    "release:dry": "npm run build && node scripts/make-ico.mjs && electron-builder --win nsis --x64 --publish never",
+    "release:win": "npm run release:dry && node scripts/publish-release.mjs"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11",
+    "onnxruntime-web": "^1.31.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "systeminformation": "^5.33.23"
+  },
+  "optionalDependencies": {
+    "sherpa-onnx-node": "^1.13.4"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.4.11",
+    "electron-builder": "^26.18.0",
+    "typescript": "~5.6.3",
+    "vite": "^6.0.7"
+  }
+}

@@ -1,0 +1,84 @@
+appId: io.jarvis.assistant
+productName: JARVIS
+copyright: J.A.R.V.I.S. Alpha
+
+directories:
+  output: release
+  buildResources: build
+
+# Alpha: kein asar, damit server.mjs als eigenständiger Node-Prozess läuft
+# und die App-Dateien nachvollziehbar bleiben.
+asar: false
+
+# Nur Deutsch und Englisch mitliefern; die übrigen Chromium-Locales kosten ~39 MB.
+electronLanguages:
+  - de
+  - en-US
+
+# Strongere NSIS-Kompression; kostet nur Build-Zeit.
+compression: maximum
+
+files:
+  - dist/**
+  - electron/**
+  - server.mjs
+  - usage.mjs
+  - websearch.mjs
+  - tooling.mjs
+  - package.json
+  # Native Streaming-STT (inkl. plattformspezifischer Addon-Pakete).
+  # Fehlt das optionale Paket, bleibt der SAPI-Weg unverändert.
+  - node_modules/sherpa-onnx-*/**
+  # Das Weckwort braucht nur die SIMD-WASM-Variante ohne JSEP/Asyncify/JSPI.
+  # Alles andere aus onnxruntime-web/dist summiert sich auf ~120 MB.
+  - "!node_modules/onnxruntime-web/dist/*.map"
+  - "!node_modules/onnxruntime-web/dist/ort.all.*"
+  - "!node_modules/onnxruntime-web/dist/ort.webgl.*"
+  - "!node_modules/onnxruntime-web/dist/ort.webgpu.*"
+  - "!node_modules/onnxruntime-web/dist/ort.jspi.*"
+  - "!node_modules/onnxruntime-web/dist/ort.wasm.*"
+  - "!node_modules/onnxruntime-web/dist/ort.js"
+  - "!node_modules/onnxruntime-web/dist/ort.mjs"
+  - "!node_modules/onnxruntime-web/dist/ort.bundle.*"
+  - "!node_modules/onnxruntime-web/dist/ort.min.js"
+  - "!node_modules/onnxruntime-web/dist/ort.min.mjs"
+  - "!node_modules/onnxruntime-web/dist/*.jsep.*"
+  - "!node_modules/onnxruntime-web/dist/*.asyncify.*"
+  - "!node_modules/onnxruntime-web/dist/*.jspi.*"
+
+extraResources:
+  - from: .env.example
+    to: .env.example
+  - from: models
+    to: models
+  - from: piper
+    to: piper
+
+# Ziel für den Auto-Updater. Muss öffentlich erreichbar sein;
+# latest.yml, Setup.exe und Blockmap liegen im neuesten Release.
+publish:
+  provider: generic
+  url: https://github.com/hoffmannfabian326/JARVIS-Windows/releases/latest/download
+  channel: latest
+
+mac:
+  extendInfo:
+    NSMicrophoneUsageDescription: JARVIS hört lokal auf das Weckwort.
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  # Ohne Wine auf Linux baubar; Alpha ist bewusst unsigniert.
+  signAndEditExecutable: false
+
+nsis:
+  oneClick: true
+  perMachine: false
+  allowElevation: false
+  runAfterFinish: true
+  shortcutName: JARVIS
+  differentialPackage: true
+  artifactName: JARVIS-Alpha-${version}-win-x64-Setup.${ext}
