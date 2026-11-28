@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { parseBingRss, resolveSearchConfig } from '../websearch.mjs';
 import {
@@ -16,7 +17,8 @@ import {
 import * as llmUsage from '../usage.mjs';
 
 const require = createRequire(import.meta.url);
-const root = new URL('..', import.meta.url).pathname;
+// fileURLToPath statt .pathname: sonst wird der Pfad unter Windows zu D:\D:\...
+const root = fileURLToPath(new URL('..', import.meta.url));
 
 let passed = 0;
 let failed = 0;
