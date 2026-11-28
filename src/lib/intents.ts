@@ -156,6 +156,25 @@ const SEARCH_TARGETS: Record<string, string> = {
 
 const capitalize = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1);
 
+/** Markenschreibweise für Ansagen – "whatsapp" soll nicht als "Whatsapp" klingen. */
+const SITE_LABELS: Record<string, string> = {
+  whatsapp: 'WhatsApp',
+  youtube: 'YouTube',
+  github: 'GitHub',
+  gmail: 'Gmail',
+  ebay: 'eBay',
+  tiktok: 'TikTok',
+  instagram: 'Instagram',
+  chatgpt: 'ChatGPT',
+  deepseek: 'DeepSeek',
+  stackoverflow: 'Stack Overflow',
+  idealo: 'idealo',
+  ard: 'ARD',
+  zdf: 'ZDF',
+};
+
+const siteLabel = (key: string): string => SITE_LABELS[key] ?? capitalize(key);
+
 const numberFormat = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 4 });
 
 function greeting(): string {
@@ -488,7 +507,7 @@ export async function handleCommand(raw: string, ctx: JarvisContext): Promise<Ja
       const base = SEARCH_TARGETS[service];
       return {
         speak: base
-          ? `Ich suche auf ${capitalize(service)} nach ${query}.`
+          ? `Ich suche auf ${siteLabel(service)} nach ${query}.`
           : `Ich suche nach ${service} ${query}.`,
         url: base
           ? `${base}${encodeURIComponent(query)}`
@@ -506,15 +525,16 @@ export async function handleCommand(raw: string, ctx: JarvisContext): Promise<Ja
       .replace(/^(den|die|das)\s+/, '')
       .trim();
 
-    // Bekannte Programme zuerst: „öffne Spotify“ soll die App starten, nicht den Webplayer.
-    if (APP_WORDS.has(lower)) {
+    // Bekannte Programme zuerst – aber nur in der Desktop-Hülle: „öffne Spotify“
+    // soll dort die App starten, im Browser dagegen den Webplayer öffnen.
+    if (APP_WORDS.has(lower) && ctx.desktop) {
       // Groß geschrieben, damit die Ansage „Notepad wird gestartet“ lautet.
-      return ctx.desktop ? ctx.desktop.openApp(capitalize(lower)) : needsDesktop();
+      return ctx.desktop.openApp(capitalize(lower));
     }
 
     const key = Object.keys(SITES).find((name) => lower.includes(name));
     if (key) {
-      return { speak: `${capitalize(key)} wird geöffnet.`, url: SITES[key] };
+      return { speak: `${siteLabel(key)} wird geöffnet.`, url: SITES[key] };
     }
     if (/^[\w-]+(\.[\w-]+)+$/.test(lower)) {
       return { speak: `Ich öffne ${target}.`, url: `https://${lower}` };
