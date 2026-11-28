@@ -69,6 +69,35 @@ contextBridge.exposeInMainWorld('jarvisDesktop', {
   setDictationMode: (enabled) => ipcRenderer.invoke('jarvis:setDictationMode', enabled),
   dictate: (options) => ipcRenderer.invoke('jarvis:dictate', options ?? {}),
   typeText: (text) => ipcRenderer.invoke('jarvis:typeText', text),
+  automationState: () => ipcRenderer.invoke('jarvis:automationState'),
+  automationSetEnabled: (enabled) => ipcRenderer.invoke('jarvis:automationSetEnabled', enabled),
+  automationSettings: (patch) => ipcRenderer.invoke('jarvis:automationSettings', patch ?? {}),
+  automationProfiles: (profiles) => ipcRenderer.invoke('jarvis:automationProfiles', profiles ?? {}),
+  automationHidden: (modules) => ipcRenderer.invoke('jarvis:automationHidden', modules ?? []),
+  automationSave: (routine) => ipcRenderer.invoke('jarvis:automationSave', routine ?? {}),
+  automationDelete: (id) => ipcRenderer.invoke('jarvis:automationDelete', id),
+  automationDuplicate: (id) => ipcRenderer.invoke('jarvis:automationDuplicate', id),
+  automationToggle: (id, enabled) => ipcRenderer.invoke('jarvis:automationToggle', id, enabled),
+  automationRun: (id) => ipcRenderer.invoke('jarvis:automationRun', id),
+  automationSimulate: (id) => ipcRenderer.invoke('jarvis:automationSimulate', id),
+  automationHistory: (limit) => ipcRenderer.invoke('jarvis:automationHistory', limit),
+  automationClearHistory: () => ipcRenderer.invoke('jarvis:automationClearHistory'),
+  automationCheck: () => ipcRenderer.invoke('jarvis:automationCheck'),
+  onAutomationState(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('jarvis:automation-state', listener);
+    return () => ipcRenderer.removeListener('jarvis:automation-state', listener);
+  },
+  onAutomationNotify(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('jarvis:automation-notify', listener);
+    return () => ipcRenderer.removeListener('jarvis:automation-notify', listener);
+  },
+  onAutomationBriefing(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('jarvis:automation-briefing', listener);
+    return () => ipcRenderer.removeListener('jarvis:automation-briefing', listener);
+  },
   getMonitorConsent: () => ipcRenderer.invoke('jarvis:monitorConsent'),
   setMonitorConsent: (granted) => ipcRenderer.invoke('jarvis:monitorConsent', granted),
   sampleSystem: () => ipcRenderer.invoke('jarvis:monitorSample'),

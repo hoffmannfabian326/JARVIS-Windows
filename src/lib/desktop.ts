@@ -302,6 +302,34 @@ export interface ApiConfigDraft {
 
 export type ApiConfigResult = { ok: boolean; error?: string } & Partial<ApiConfigState>;
 
+export interface AutomationSimulation {
+  ok: boolean;
+  error?: string;
+  triggerOk?: boolean;
+  triggerNote?: string;
+  conditionsOk?: boolean;
+  conditionsNote?: string;
+  wouldRun?: boolean;
+  actions?: string[];
+  contextMode?: string;
+}
+
+export interface AutomationResult {
+  ok: boolean;
+  error?: string;
+  message?: string;
+  status?: string;
+  routine?: unknown;
+  snapshot?: unknown;
+  actions?: Array<{ kind: string; label: string; ok: boolean; error?: string; skipped?: boolean }>;
+}
+
+export interface AutomationBriefing {
+  routineId: string;
+  routineName: string;
+  prompt: string;
+}
+
 export interface DesktopBridge {
   isDesktop: true;
   platform: string;
@@ -393,6 +421,35 @@ export interface DesktopBridge {
   onSttFinal?: (callback: (text: string) => void) => () => void;
   onSttError?: (callback: (message: string) => void) => () => void;
   getLlmUsage?: () => Promise<LlmUsage | null>;
+  automationState?: () => Promise<unknown>;
+  automationSetEnabled?: (enabled: boolean) => Promise<unknown>;
+  automationSettings?: (patch: Record<string, unknown>) => Promise<AutomationResult>;
+  automationProfiles?: (profiles: { gaming: string[]; productivity: string[]; relax: string[] }) => Promise<AutomationResult>;
+  automationHidden?: (modules: string[]) => Promise<AutomationResult>;
+  automationSave?: (routine: unknown) => Promise<AutomationResult>;
+  automationDelete?: (id: string) => Promise<AutomationResult>;
+  automationDuplicate?: (id: string) => Promise<AutomationResult>;
+  automationToggle?: (id: string, enabled: boolean) => Promise<AutomationResult>;
+  automationRun?: (id: string) => Promise<AutomationResult>;
+  automationSimulate?: (id: string) => Promise<AutomationSimulation>;
+  automationHistory?: (limit?: number) => Promise<AutomationRunRecord[]>;
+  automationClearHistory?: () => Promise<AutomationResult>;
+  automationCheck?: () => Promise<AutomationResult>;
+  onAutomationState?: (callback: (snapshot: unknown) => void) => () => void;
+  onAutomationNotify?: (callback: (payload: { title: string; body: string; priority: number }) => void) => () => void;
+  onAutomationBriefing?: (callback: (payload: AutomationBriefing) => void) => () => void;
+}
+
+export interface AutomationRunRecord {
+  id: string;
+  at: number;
+  routineId: string;
+  routineName: string;
+  trigger: string;
+  status: 'ok' | 'error' | 'skipped' | 'simulated';
+  message: string;
+  actions: Array<{ kind: string; label: string; ok: boolean; error?: string; skipped?: boolean }>;
+  durationMs: number;
 }
 
 declare global {

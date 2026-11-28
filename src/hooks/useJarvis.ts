@@ -26,6 +26,7 @@ import {
 } from '../lib/brain';
 import { askVision } from '../lib/vision';
 import { parseToolCall, requiresConfirmation, type PendingTool } from '../lib/tools';
+import { routineFromDraft } from '../lib/automation';
 import { SentenceStream } from '../lib/sentences';
 import { shouldInterrupt } from '../lib/bargein';
 import { getWeatherReport } from '../lib/weather';
@@ -1317,6 +1318,33 @@ export function useJarvis() {
             return result.ok ? { ok: true } : { ok: false, error: 'Der Rechner ließ sich nicht sperren.' };
           }
 
+          case 'propose_automation': {
+            if (!desktop?.automationSave) {
+              return { ok: false, error: 'Automationen lassen sich nur in der Desktop-App speichern.' };
+            }
+            const draft = routineFromDraft({
+              name: args.name,
+              description: args.description ?? args.summary,
+              trigger: args.trigger,
+              conditions: args.conditions,
+              actions: args.actions,
+            });
+            if (!draft.ok) {
+              return { ok: false, error: draft.error };
+            }
+            const saved = await desktop.automationSave(draft.routine);
+            if (!saved.ok) {
+              return { ok: false, error: saved.error || 'Der Entwurf ließ sich nicht speichern.' };
+            }
+            return {
+              ok: true,
+              entwurf: draft.routine.name,
+              aktiv: false,
+              hinweis:
+                'Der Entwurf ist gespeichert und noch deaktiviert. Im Automation Center unter Automation prüfen und aktivieren.',
+            };
+          }
+
           default:
             return { ok: false, error: 'Unbekanntes Werkzeug.' };
           }
@@ -2341,6 +2369,17 @@ export function useJarvis() {
     };
   }, [engine]);
 
+  /** Spricht eine kurze Ansage, ohne einen Befehl zu verarbeiten. */
+  const announce = useCallback(
+    (message: string) => {
+      const text = String(message ?? '').trim();
+      if (!text) return;
+      pendingAnnouncementsRef.current.push(text);
+      void drainAnnouncements();
+    },
+    [drainAnnouncements],
+  );
+
   return {
     settings,
     updateSettings,
@@ -2393,6 +2432,8 @@ export function useJarvis() {
     resumeConversation,
     deleteConversation,
     captureVoiceCommand,
+    announce,
+    notify: flashNotice,
     nowLabel: formatDuration(now - startedAt),
   };
 }

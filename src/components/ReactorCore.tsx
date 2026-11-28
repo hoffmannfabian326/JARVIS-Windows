@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { Mode } from '../types';
+import fireRing from '../assets/fire-ring.jpg';
 
 interface Props {
   mode: Mode;
@@ -26,10 +27,140 @@ function rgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+function seeded(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+}
+
+interface Ember {
+  angle: number;
+  radius: number;
+  squash: number;
+  speed: number;
+  size: number;
+  wobble: number;
+  wobbleSpeed: number;
+  depth: number;
+}
+
+function buildRing(count: number, centerR: number, spread: number, seed: number): Ember[] {
+  const random = seeded(seed);
+  return Array.from({ length: count }, () => {
+    const offset = (random() + random() + random() - 1.5) / 1.5;
+    return {
+      angle: random() * TAU,
+      radius: centerR + offset * spread,
+      squash: 0.86 + random() * 0.18,
+      speed: (0.06 + random() * 0.16) * (random() > 0.86 ? -1 : 1),
+      size: 0.8 + random() * 2.2,
+      wobble: random() * TAU,
+      wobbleSpeed: 0.5 + random() * 1.7,
+      depth: 0.3 + random() * 0.7,
+    };
+  });
+}
+
+function buildEmbers(count: number, minR: number, maxR: number, seed: number): Ember[] {
+  const random = seeded(seed);
+  return Array.from({ length: count }, () => ({
+    angle: random() * TAU,
+    radius: minR + random() * (maxR - minR),
+    squash: 0.82 + random() * 0.22,
+    speed: (0.05 + random() * 0.18) * (random() > 0.85 ? -1 : 1),
+    size: 1 + random() * 2.6,
+    wobble: random() * TAU,
+    wobbleSpeed: 0.4 + random() * 1.8,
+    depth: 0.25 + random() * 0.75,
+  }));
+}
+
+interface Streak {
+  angle: number;
+  radius: number;
+  speed: number;
+  length: number;
+}
+
+function buildStreaks(count: number, seed: number): Streak[] {
+  const random = seeded(seed);
+  return Array.from({ length: count }, () => ({
+    angle: random() * TAU,
+    radius: 0.7 + random() * 0.6,
+    speed: 0.25 + random() * 0.7,
+    length: 0.05 + random() * 0.12,
+  }));
+}
+
+interface Flare {
+  angle: number;
+  radius: number;
+  length: number;
+  speed: number;
+}
+
+function buildFlares(count: number, seed: number): Flare[] {
+  const random = seeded(seed);
+  return Array.from({ length: count }, () => ({
+    angle: random() * TAU,
+    radius: 0.6 + random() * 0.32,
+    length: 0.12 + random() * 0.32,
+    speed: (random() > 0.5 ? 1 : -1) * (0.04 + random() * 0.1),
+  }));
+}
+
+function glowSprite(inner: string, outer: string): HTMLCanvasElement {
+  const size = 32;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, inner);
+  gradient.addColorStop(0.35, outer);
+  gradient.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+  return canvas;
+}
+
 /**
- * Der Reaktorkern nach dem HUD-Concept: Mikrometer-Ticks, ein Kranz aus
- * ungleich langen Segmenten, Kupfer-Punktring, Radar-Sweep, Wellenform und
- * eine rotierende Drahtgitter-Kugel in der Mitte.
+ * Der gerenderte Ring kommt auf Schwarz. Für den additiven Modus wird das
+ * Schwarz einmalig in Transparenz umgerechnet, sonst läge ein dunkles Quadrat
+ * über dem Panel.
+ */
+function keyOutBlack(image: HTMLImageElement): HTMLCanvasElement {
+  const size = Math.min(1024, image.naturalWidth || 1024);
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  ctx.drawImage(image, 0, 0, size, size);
+  const frame = ctx.getImageData(0, 0, size, size);
+  const data = frame.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const max = Math.max(data[i], data[i + 1], data[i + 2]);
+    data[i + 3] = max > 24 ? Math.min(255, (max - 24) * 1.45) : 0;
+  }
+  ctx.putImageData(frame, 0, 0);
+  return canvas;
+}
+
+let flameSprite: HTMLCanvasElement | null = null;
+const flameImage = new Image();
+flameImage.src = fireRing;
+flameImage.addEventListener('load', () => {
+  flameSprite = keyOutBlack(flameImage);
+});
+
+/**
+ * Der Kern: eine gerenderte Feuerfontäne, die langsam rotiert und flackert,
+ * darüber feine Glutpartikel, Flammenarme und Funken. Die Stimme treibt
+ * Helligkeit, Tempo und Größe.
  */
 export default function ReactorCore({ mode, analyser, onActivate }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -41,7 +172,7 @@ export default function ReactorCore({ mode, analyser, onActivate }: Props) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.6);
     let width = 0;
     let height = 0;
 
@@ -57,6 +188,15 @@ export default function ReactorCore({ mode, analyser, onActivate }: Props) {
     const observer = new ResizeObserver(resize);
     observer.observe(canvas);
 
+    const pale = glowSprite('rgba(255, 252, 240, 0.95)', 'rgba(255, 196, 110, 0.55)');
+    const warm = glowSprite('rgba(255, 214, 150, 0.9)', 'rgba(255, 120, 28, 0.45)');
+    const deep = glowSprite('rgba(255, 170, 80, 0.6)', 'rgba(210, 70, 12, 0.28)');
+
+    const belt = buildRing(230, 0.94, 0.2, 17);
+    const dust = buildEmbers(46, 1.1, 1.45, 41);
+    const streaks = buildStreaks(26, 101);
+    const flares = buildFlares(9, 707);
+
     const wave = new Uint8Array(256).fill(128);
     let level = 0;
     let previous = performance.now();
@@ -65,13 +205,15 @@ export default function ReactorCore({ mode, analyser, onActivate }: Props) {
     const draw = (timestamp: number) => {
       const delta = Math.min(0.06, (timestamp - previous) / 1000);
       previous = timestamp;
-      phaseRef.current += delta * (mode === 'thinking' ? 1.1 : mode === 'speaking' ? 0.55 : 0.24);
+      const tempo = mode === 'thinking' ? 1.35 : mode === 'speaking' ? 1 : mode === 'off' ? 0.55 : 0.8;
+      phaseRef.current += delta * tempo;
 
       const accent = ACCENT[mode];
       const cx = width / 2;
       const cy = height / 2;
-      const R = Math.min(width, height) * 0.335;
+      const R = Math.min(width, height) * 0.355;
       const phase = phaseRef.current;
+      const dim = mode === 'off' ? 0.5 : mode === 'wake' ? 0.8 : 1;
 
       if (analyser) {
         analyser.getByteTimeDomainData(wave);
@@ -81,243 +223,157 @@ export default function ReactorCore({ mode, analyser, onActivate }: Props) {
           sum += v * v;
         }
         const rms = Math.sqrt(sum / wave.length);
-        const target = Math.min(1, rms * 3.4);
-        level += (target - level) * 0.18;
+        level += (Math.min(1, rms * 3.4) - level) * 0.18;
       } else {
         level += (0 - level) * 0.08;
       }
 
       ctx.clearRect(0, 0, width, height);
+      ctx.save();
+      ctx.translate(cx, cy);
 
-      // Halo hinter dem gesamten Instrument
-      const halo = ctx.createRadialGradient(cx, cy, R * 0.05, cx, cy, R * 1.75);
-      halo.addColorStop(0, rgba(accent, 0.18 + level * 0.16));
-      halo.addColorStop(0.45, rgba(accent, 0.05));
-      halo.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      ctx.fillStyle = halo;
+      // Dunkle Scheibe unter dem Feuer, damit der Ring auf dem Panel steht.
+      const base = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 1.7);
+      base.addColorStop(0, 'rgba(44, 18, 5, 0.42)');
+      base.addColorStop(0.55, 'rgba(18, 8, 3, 0.34)');
+      base.addColorStop(0.82, 'rgba(10, 5, 2, 0.16)');
+      base.addColorStop(1, 'rgba(4, 2, 1, 0)');
+      ctx.fillStyle = base;
       ctx.beginPath();
-      ctx.arc(cx, cy, R * 1.75, 0, TAU);
+      ctx.arc(0, 0, R * 1.7, 0, TAU);
       ctx.fill();
 
-      // Mikrometer-Ticks am äußeren Rand
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(phase * 0.07);
-      for (let i = 0; i < 96; i += 1) {
-        const angle = (i / 96) * TAU;
-        const major = i % 8 === 0;
-        const mid = i % 4 === 0;
-        const outer = R * 1.46;
-        const inner = R * (major ? 1.36 : mid ? 1.39 : 1.41);
-        ctx.beginPath();
-        ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
-        ctx.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
-        ctx.lineWidth = major ? 1.4 : 0.55;
-        ctx.strokeStyle = rgba(accent, major ? 0.6 : mid ? 0.34 : 0.2);
-        ctx.stroke();
-      }
-      ctx.restore();
-
-      // Segmentkranz aus ungleich langen Blöcken
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(-phase * 0.15);
-      const blocks = 56;
-      for (let i = 0; i < blocks; i += 1) {
-        const angle = (i / blocks) * TAU;
-        const span = 0.05 + (Math.sin(i * 1.7) + 1) * 0.022;
-        const inner = R * 1.19;
-        const outer = R * (1.26 + (Math.sin(i * 0.9 + phase * 0.5) + 1) * 0.035 + level * 0.05);
-        ctx.beginPath();
-        ctx.arc(0, 0, outer, angle, angle + span);
-        ctx.arc(0, 0, inner, angle + span, angle, true);
-        ctx.closePath();
-        ctx.fillStyle = rgba(accent, 0.16 + (Math.sin(i * 0.6 - phase * 1.3) + 1) * 0.14);
-        ctx.fill();
-      }
-      ctx.restore();
-
-      // Gestrichelter Orbit
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(-phase * 0.26);
-      ctx.setLineDash([2, 10]);
-      ctx.strokeStyle = rgba(accent, 0.46);
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(0, 0, R * 1.1, 0, TAU);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.restore();
-
-      // Radar-Sweep
-      ctx.save();
-      ctx.translate(cx, cy);
-      const createConic = (ctx as any).createConicGradient;
-      if (typeof createConic === 'function') {
-        const sweep = createConic.call(ctx, -phase * 1.3, 0, 0);
-        sweep.addColorStop(0, rgba(accent, 0));
-        sweep.addColorStop(0.1, rgba(accent, 0.14 + level * 0.12));
-        sweep.addColorStop(0.17, rgba(accent, 0));
-        sweep.addColorStop(1, rgba(accent, 0));
-        ctx.fillStyle = sweep;
-        ctx.beginPath();
-        ctx.arc(0, 0, R * 1.05, 0, TAU);
-        ctx.fill();
-
-        const beam = ctx.createLinearGradient(0, 0, 0, -R * 1.05);
-        beam.addColorStop(0, rgba(accent, 0.5));
-        beam.addColorStop(1, rgba(accent, 0));
-        ctx.strokeStyle = beam;
-        ctx.lineWidth = 1;
+      // Rauchschleier, gegenläufig drehend
+      for (let i = 0; i < 2; i += 1) {
         ctx.save();
-        ctx.rotate(phase * 1.3);
+        ctx.rotate(phase * (0.04 + i * 0.026) + i * 1.7);
+        const smoke = ctx.createRadialGradient(R * 0.4, 0, 0, R * 0.4, 0, R * 0.95);
+        smoke.addColorStop(0, 'rgba(255, 120, 30, 0.055)');
+        smoke.addColorStop(0.55, 'rgba(190, 70, 14, 0.03)');
+        smoke.addColorStop(1, 'rgba(120, 40, 8, 0)');
+        ctx.fillStyle = smoke;
         ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(0, -R * 1.05);
-        ctx.stroke();
-        ctx.restore();
-      }
-      ctx.restore();
-
-      // Kupfer-Punktring (Gegenspieler zum Segmentkranz)
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(phase * 0.18);
-      ctx.setLineDash([1, 6]);
-      ctx.strokeStyle = 'rgba(224, 138, 60, 0.65)';
-      ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      ctx.arc(0, 0, R * 0.78, 0, TAU);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.restore();
-
-      // Wellenform-Ring
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.beginPath();
-      const points = 200;
-      for (let i = 0; i <= points; i += 1) {
-        const sample = wave[Math.floor((i / points) * (wave.length - 1))] ?? 128;
-        const v = (sample - 128) / 128;
-        const angle = (i / points) * TAU - Math.PI / 2;
-        const radius = R * 0.93 - v * R * 0.16 * (0.5 + level * 1.8);
-        const x = Math.cos(angle) * radius;
-        const y = Math.sin(angle) * radius;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.closePath();
-      ctx.strokeStyle = rgba(accent, 0.85);
-      ctx.lineWidth = 1.3;
-      ctx.shadowColor = rgba(accent, 0.8);
-      ctx.shadowBlur = 8;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-      ctx.restore();
-
-      // Drahtgitter-Kugel: Längengrade, Breitengrade, Knoten
-      ctx.save();
-      ctx.translate(cx, cy);
-      const pulse = 1 + Math.sin(phase * 2.1) * 0.02 + level * 0.24;
-      const coreR = R * 0.5 * pulse;
-
-      const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, coreR * 1.15);
-      glow.addColorStop(0, rgba('#fff6e6', 0.5));
-      glow.addColorStop(0.3, rgba(accent, 0.34));
-      glow.addColorStop(1, rgba(accent, 0));
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(0, 0, coreR * 1.15, 0, TAU);
-      ctx.fill();
-
-      ctx.strokeStyle = rgba(accent, 0.32);
-      ctx.lineWidth = 0.8;
-
-      for (let i = 1; i < 5; i += 1) {
-        const y = -coreR + (i / 5) * coreR * 2;
-        const rx = Math.sqrt(Math.max(0, coreR * coreR - y * y));
-        ctx.beginPath();
-        ctx.ellipse(0, y, rx, rx * 0.18, 0, 0, TAU);
-        ctx.stroke();
-      }
-
-      for (let i = 0; i < 3; i += 1) {
-        const spin = phase * 0.3 + (i * Math.PI) / 3;
-        const rx = Math.abs(Math.cos(spin)) * coreR;
-        ctx.beginPath();
-        ctx.ellipse(0, 0, rx, coreR, 0, 0, TAU);
-        ctx.stroke();
-      }
-
-      ctx.fillStyle = rgba('#fff1d8', 0.75);
-      for (let i = 0; i < 10; i += 1) {
-        const angle = phase * 0.5 + (i / 10) * TAU;
-        const latitude = Math.sin(i * 1.3 + phase * 0.4) * coreR * 0.7;
-        const radius = Math.sqrt(Math.max(0, coreR * coreR - latitude * latitude));
-        const x = Math.cos(angle) * radius;
-        const y = latitude;
-        ctx.beginPath();
-        ctx.arc(x, y, i % 3 === 0 ? 1.5 : 0.9, 0, TAU);
+        ctx.ellipse(R * 0.4, 0, R * 0.95, R * 0.62, 0.4 + i * 0.3, 0, TAU);
         ctx.fill();
-      }
-
-      ctx.strokeStyle = rgba(accent, 0.45);
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(0, 0, coreR, 0, TAU);
-      ctx.stroke();
-      ctx.restore();
-
-      // Fadenkreuz und umlaufende Satelliten
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.strokeStyle = rgba(accent, 0.42);
-      for (let i = 0; i < 4; i += 1) {
-        ctx.save();
-        ctx.rotate((i / 4) * TAU + phase * 0.2);
-        ctx.beginPath();
-        ctx.moveTo(R * 0.54, 0);
-        ctx.lineTo(R * 0.62, 0);
-        ctx.stroke();
         ctx.restore();
       }
 
+      ctx.globalCompositeOperation = 'lighter';
+
+      // Die Feuerfontäne: zwei leicht versetzte, gegeneinander drehende Ebenen.
+      if (flameSprite) {
+        const breath = 1 + Math.sin(phase * 1.7) * 0.012 + level * 0.035;
+        const side = R * 2.55 * breath;
+        ctx.globalAlpha = dim * (0.9 + Math.sin(phase * 6.4) * 0.05 + level * 0.12);
+        ctx.save();
+        ctx.rotate(phase * 0.045);
+        ctx.drawImage(flameSprite, -side / 2, -side / 2, side, side);
+        ctx.restore();
+
+        ctx.globalAlpha = dim * 0.14;
+        ctx.save();
+        ctx.rotate(-phase * 0.028 + 0.8);
+        const wide = side * 1.06;
+        ctx.drawImage(flameSprite, -wide / 2, -wide / 2, wide, wide);
+        ctx.restore();
+      }
+
+      // Feine Glut auf und um dem Ring: bringt Bewegung in das Standbild.
+      const drawEmber = (ember: Ember, sprite: HTMLCanvasElement, scale: number) => {
+        ember.angle += ember.speed * delta * (0.6 + tempo * 0.7 + level * 1.4);
+        const wobble = Math.sin(phase * ember.wobbleSpeed + ember.wobble) * 0.045;
+        const radius = R * ember.radius * (1 + wobble + level * 0.035);
+        const x = Math.cos(ember.angle) * radius;
+        const y = Math.sin(ember.angle) * radius * ember.squash;
+        const size = ember.size * scale * (0.55 + ember.depth * 0.75) * (0.8 + level * 0.7);
+        ctx.drawImage(sprite, x - size / 2, y - size / 2, size, size);
+      };
+
+      ctx.globalAlpha = dim * 0.3;
+      for (const ember of dust) drawEmber(ember, deep, 3.6);
+      ctx.globalAlpha = dim * 0.7;
+      for (const ember of belt) drawEmber(ember, warm, 3.8);
+
+      // Funken, die nach außen schießen
+      ctx.globalAlpha = 1;
+      for (const streak of streaks) {
+        streak.radius += streak.speed * delta * (0.35 + level * 0.8);
+        if (streak.radius > 1.5) {
+          streak.radius = 0.8;
+          streak.angle = Math.random() * TAU;
+        }
+        const fade = Math.max(0, 1 - (streak.radius - 0.8) / 0.7);
+        const inner = R * streak.radius;
+        const outer = R * (streak.radius + streak.length * (0.6 + level));
+        const x1 = Math.cos(streak.angle) * inner;
+        const y1 = Math.sin(streak.angle) * inner * 0.94;
+        const x2 = Math.cos(streak.angle) * outer;
+        const y2 = Math.sin(streak.angle) * outer * 0.94;
+        ctx.strokeStyle = rgba('#ffd9a4', 0.6 * fade * dim);
+        ctx.lineWidth = 0.9 + fade * 0.9;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+
+      // Flammenarme lecken tangential am Ring entlang.
+      for (const flare of flares) {
+        flare.angle += flare.speed * delta;
+        const radius = R * (flare.radius + 0.16 + Math.sin(phase * 0.6 + flare.angle) * 0.03);
+        const sweep = flare.length * (0.8 + level * 0.5);
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, flare.angle, flare.angle + sweep);
+        ctx.strokeStyle = rgba('#ffd2a0', 0.34 * dim);
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        const headX = Math.cos(flare.angle + sweep) * radius;
+        const headY = Math.sin(flare.angle + sweep) * radius;
+        ctx.globalAlpha = 0.7 * dim;
+        ctx.drawImage(pale, headX - 3, headY - 3, 6, 6);
+        ctx.globalAlpha = 1;
+      }
+
+      // Pulsierende Glut in der Mitte, gekoppelt an die Stimme.
+      const pulse = 1 + Math.sin(phase * 2.3) * 0.04 + level * 0.28;
+      const core = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 0.5 * pulse);
+      core.addColorStop(0, 'rgba(255, 252, 240, 0.5)');
+      core.addColorStop(0.3, 'rgba(255, 210, 130, 0.24)');
+      core.addColorStop(0.7, 'rgba(255, 140, 40, 0.08)');
+      core.addColorStop(1, 'rgba(255, 100, 20, 0)');
+      ctx.fillStyle = core;
+      ctx.beginPath();
+      ctx.arc(0, 0, R * 0.5 * pulse, 0, TAU);
+      ctx.fill();
+
+      // Umlaufende Funken außerhalb des Rings
       for (let i = 0; i < 3; i += 1) {
         const angle = phase * (0.5 + i * 0.17) + (i / 3) * TAU;
-        const radius = R * (1.13 + i * 0.035);
+        const radius = R * (1.28 + i * 0.06);
         const x = Math.cos(angle) * radius;
         const y = Math.sin(angle) * radius;
-        ctx.fillStyle = rgba(accent, 0.85);
-        ctx.shadowColor = rgba(accent, 0.9);
-        ctx.shadowBlur = 6;
+        ctx.globalAlpha = 0.85 * dim;
+        ctx.fillStyle = rgba(accent, 0.9);
         ctx.beginPath();
-        ctx.arc(x, y, 1.8, 0, TAU);
+        ctx.arc(x, y, 1.7, 0, TAU);
         ctx.fill();
-        ctx.shadowBlur = 0;
       }
-      ctx.restore();
+      ctx.globalAlpha = 1;
 
-      // Umlaufende Beschriftung
-      const label = 'J.A.R.V.I.S. · MARK VIII · NEURAL LINK · ';
-      const chars = [...label];
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.font = '8.5px "JetBrains Mono", monospace';
-      ctx.fillStyle = rgba(accent, 0.42);
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      chars.forEach((char, index) => {
-        const angle = (index / chars.length) * TAU + phase * 0.05 - Math.PI / 2;
-        ctx.save();
-        ctx.rotate(angle);
-        ctx.translate(0, -R * 1.24);
-        ctx.fillText(char, 0, 0);
-        ctx.restore();
-      });
-      ctx.restore();
+      // Vignette: das Feuer läuft am Rand ins Dunkel aus, als Kreis, damit
+      // kein dunkler Kasten über dem Raster liegt.
+      ctx.globalCompositeOperation = 'source-over';
+      const vignette = ctx.createRadialGradient(0, 0, R * 0.55, 0, 0, R * 1.72);
+      vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      vignette.addColorStop(0.62, 'rgba(6, 3, 1, 0.1)');
+      vignette.addColorStop(0.88, 'rgba(5, 2, 1, 0.5)');
+      vignette.addColorStop(1, 'rgba(4, 2, 1, 0)');
+      ctx.fillStyle = vignette;
+      ctx.beginPath();
+      ctx.arc(0, 0, R * 1.72, 0, TAU);
+      ctx.fill();
 
+      ctx.restore();
       frame = requestAnimationFrame(draw);
     };
 

@@ -3,6 +3,7 @@ import { parseMemoryIntent, type MemoryItem, type MemoryKind } from './memory';
 import { parseDuration } from './numbers';
 import { getWeatherReport } from './weather';
 import { matchRoutine, runRoutine } from './routines';
+import { getDesktop } from './desktop';
 
 export interface DesktopActions {
   openApp: (name: string) => Promise<JarvisReply>;
@@ -286,6 +287,40 @@ export async function handleCommand(raw: string, ctx: JarvisContext): Promise<Ja
   // Routinen bündeln mehrere Schritte unter einem Befehl — lokal, ohne Modell.
   const routine = matchRoutine(t);
   if (routine) return runRoutine(routine, ctx);
+
+  // „Starte Routine …“ führt eine im Automation Center gespeicherte Routine aus.
+  const voiceRoutine = /^(?:starte|start|führe|fuehre|mach)\s+(?:die\s+|den\s+)?routine\s+(.+)$/.exec(t);
+  if (voiceRoutine) {
+    const wanted = voiceRoutine[1].trim();
+    const desktop = getDesktop();
+    if (!desktop?.automationState || !desktop.automationRun) {
+      return { speak: 'Gespeicherte Routinen lassen sich nur in der Desktop-App starten.' };
+    }
+    try {
+      const state = (await desktop.automationState()) as {
+        routines?: Array<{ id?: unknown; name?: unknown; enabled?: unknown }>;
+      };
+      const routines = Array.isArray(state.routines) ? state.routines : [];
+      const target = routines.find(
+        (entry) =>
+          String(entry.name ?? '').trim().toLowerCase() === wanted ||
+          String(entry.id ?? '').trim().toLowerCase() === wanted,
+      );
+      if (!target || !target.id) {
+        return { speak: `Ich habe keine Routine mit dem Namen ${wanted} gespeichert.` };
+      }
+      if (target.enabled !== true) {
+        return { speak: `Die Routine ${String(target.name ?? wanted)} ist deaktiviert. Aktiviere sie im Automation Center.` };
+      }
+      const result = await desktop.automationRun(String(target.id));
+      if (!result.ok) {
+        return { speak: `Die Routine ${String(target.name ?? wanted)} wurde nicht ausgeführt: ${result.message || result.error || 'unbekannter Grund'}.` };
+      }
+      return { speak: `${String(target.name ?? wanted)} wurde ausgeführt.` };
+    } catch {
+      return { speak: 'Der Automationsdienst hat nicht geantwortet.' };
+    }
+  }
 
   // Hilfe
   if (/(hilfe|was kannst du|welche befehle|kommandos|fähigkeiten|faehigkeiten|was kann ich sagen)/.test(t)) {

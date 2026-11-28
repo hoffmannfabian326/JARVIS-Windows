@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import AutomationCenter, { type AutomationTab } from './components/AutomationCenter';
 import BootOverlay from './components/BootOverlay';
+import ContextDashboard from './components/ContextDashboard';
 import Conversation from './components/Conversation';
 import DiagnosticsPanel from './components/DiagnosticsPanel';
 import FirstRunGate from './components/FirstRunGate';
@@ -10,8 +12,10 @@ import Telemetry from './components/Telemetry';
 import Tiles from './components/Tiles';
 import UpdateView from './components/UpdateView';
 import TopBar from './components/TopBar';
+import { useAutomation } from './hooks/useAutomation';
 import { useJarvis } from './hooks/useJarvis';
 import { useTelemetry } from './hooks/useTelemetry';
+import { CONTEXT_LABEL, MODE_LABEL } from './lib/automation';
 import { getDesktop } from './lib/desktop';
 import type { Mode } from './types';
 
@@ -34,6 +38,8 @@ function readBoot(): boolean {
 export default function App() {
   const jarvis = useJarvis();
   const telemetry = useTelemetry();
+  const automation = useAutomation({ onSpeak: jarvis.announce, onNotice: jarvis.notify });
+  const [automationTab, setAutomationTab] = useState<AutomationTab | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [view, setView] = useState<'console' | 'update'>('console');
@@ -113,8 +119,12 @@ export default function App() {
     if (!jarvis.engineActive) void jarvis.start();
   };
 
+  const contextMode = automation.context.mode;
+  const contextClass = `context-${contextMode}${automation.settings.manualMode ? ' context-manual' : ''}`;
+  const hiddenClass = automation.settings.hiddenModules.map((module) => `hide-${module}`).join(' ');
+
   return (
-    <div className={`app mode-${jarvis.mode}`}>
+    <div className={`app mode-${jarvis.mode} ${contextClass} ${hiddenClass}`}>
       <div className="hud-frame" aria-hidden="true">
         <span className="hud-corner hud-corner-tl" />
         <span className="hud-corner hud-corner-tr" />
@@ -131,6 +141,8 @@ export default function App() {
         aiStatus={jarvis.aiStatus}
         engineActive={jarvis.engineActive}
         onOpenSettings={() => setSettingsOpen(true)}
+        context={automation.context}
+        onOpenContext={() => setAutomationTab('adaptive')}
       />
 
       <Telemetry telemetry={telemetry} />
@@ -164,18 +176,72 @@ export default function App() {
           >
             Update
           </button>
+          <button type="button" className="view-tab view-tab-priority" onClick={() => setAutomationTab('routines')}>
+            Automation
+          </button>
+          <button type="button" className="view-tab view-tab-priority" onClick={() => setAutomationTab('adaptive')}>
+            Adaptiv
+          </button>
         </nav>
+
+        {view === 'console' ? (
+          <div className={`context-strip mode-${contextMode}`}>
+            <span className="context-strip-dot" aria-hidden="true" />
+            <div className="context-strip-copy">
+              <small>BETRIEBSMODUS · {automation.settings.manualMode ? 'MANUELL' : automation.settings.autoContext ? 'AUTOMATIK' : 'AUTOMATIK AUS'}</small>
+              <strong style={{ color: `var(--context-accent)` }}>{CONTEXT_LABEL[contextMode]}</strong>
+              <span>{automation.context.reason}</span>
+            </div>
+            <div className="context-strip-actions">
+              <button
+                type="button"
+                className={!automation.settings.manualMode ? 'is-active' : ''}
+                onClick={() => void automation.setManualMode(null)}
+                disabled={!automation.supported}
+              >
+                Auto
+              </button>
+              {(['gaming', 'productivity', 'relax'] as const).map((entry) => (
+                <button
+                  key={entry}
+                  type="button"
+                  className={automation.settings.manualMode === entry ? 'is-active' : ''}
+                  onClick={() => void automation.setManualMode(entry)}
+                  disabled={!automation.supported}
+                >
+                  {MODE_LABEL[entry]}
+                </button>
+              ))}
+              <button type="button" className="ghost" onClick={() => setAutomationTab('adaptive')}>
+                Details
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {view === 'update' ? (
           <UpdateView />
         ) : (
           <>
-            <div className="orb-wrap">
-              <span className="orb-aura" aria-hidden="true" />
-              <span className="orb-ring" aria-hidden="true" />
-              <span className="orb-ticks" aria-hidden="true" />
-              <ReactorCore mode={jarvis.mode} analyser={jarvis.analyser} onActivate={activateOrb} />
-            </div>
+            {contextMode === 'gaming' || contextMode === 'productivity' || contextMode === 'relax' ? (
+              <ContextDashboard
+                mode={contextMode}
+                context={automation.context}
+                telemetry={telemetry}
+                notes={jarvis.notes.length}
+                timers={jarvis.timers}
+                onRun={runQuick}
+                onFocusChat={() => inputRef.current?.focus()}
+                onOpenAutomation={() => setAutomationTab('adaptive')}
+              />
+            ) : (
+              <div className="orb-wrap">
+                <span className="orb-aura" aria-hidden="true" />
+                <span className="orb-ring" aria-hidden="true" />
+                <span className="orb-ticks" aria-hidden="true" />
+                <ReactorCore mode={jarvis.mode} analyser={jarvis.analyser} onActivate={activateOrb} />
+              </div>
+            )}
 
             <div className="core-label">
               <span>Neural Core</span>
@@ -237,6 +303,8 @@ export default function App() {
         <span className="status-item">Timer {jarvis.timers.length}</span>
         <span className="status-dot" />
         <span className="status-item">Weckwort „{jarvis.settings.wakeWord}“</span>
+        <span className="status-dot" />
+        <span className="status-item">Kontext {CONTEXT_LABEL[contextMode]}</span>
         <span className="status-grow" />
         <span className="status-wave">
           {Array.from({ length: 14 }, (_, index) => (
@@ -268,6 +336,13 @@ export default function App() {
           setSettingsOpen(false);
           setDiagnosticsOpen(true);
         }}
+      />
+
+      <AutomationCenter
+        open={Boolean(automationTab)}
+        initialTab={automationTab ?? 'routines'}
+        automation={automation}
+        onClose={() => setAutomationTab(null)}
       />
 
       <DiagnosticsPanel

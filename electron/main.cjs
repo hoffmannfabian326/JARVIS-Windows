@@ -18,6 +18,7 @@ const {
   powerMonitor,
   Notification,
   desktopCapturer,
+  screen,
 } = require('electron');
 const {
   mediaCommand,
@@ -43,6 +44,7 @@ const activity = require('./activity.cjs');
 const history = require('./history.cjs');
 const { SherpaStt, MODEL_NAME: STT_MODEL } = require('./stt/sherpa.cjs');
 const updater = require('./updater.cjs');
+const automation = require('./automation.cjs');
 
 app.setName('JARVIS');
 
@@ -1053,6 +1055,23 @@ ipcMain.handle('jarvis:monitorConsent', (_event, granted) =>
 );
 ipcMain.handle('jarvis:monitorSample', async () => (monitor.getConsent() ? monitor.sample() : null));
 
+/* ------------------------------------------------------------- Automation */
+
+ipcMain.handle('jarvis:automationState', () => automation.getState());
+ipcMain.handle('jarvis:automationSetEnabled', (_event, enabled) => automation.setEnabled(Boolean(enabled)));
+ipcMain.handle('jarvis:automationSettings', (_event, patch) => automation.setModeSettings(patch ?? {}));
+ipcMain.handle('jarvis:automationProfiles', (_event, profiles) => automation.setProfiles(profiles ?? {}));
+ipcMain.handle('jarvis:automationHidden', (_event, modules) => automation.setHiddenModules(modules ?? []));
+ipcMain.handle('jarvis:automationSave', (_event, routine) => automation.saveRoutine(routine ?? {}));
+ipcMain.handle('jarvis:automationDelete', (_event, id) => automation.deleteRoutine(id));
+ipcMain.handle('jarvis:automationDuplicate', (_event, id) => automation.duplicateRoutine(id));
+ipcMain.handle('jarvis:automationToggle', (_event, id, enabled) => automation.toggleRoutine(id, enabled));
+ipcMain.handle('jarvis:automationRun', (_event, id) => automation.runManual(id));
+ipcMain.handle('jarvis:automationSimulate', (_event, id) => automation.simulate(id));
+ipcMain.handle('jarvis:automationHistory', (_event, limit) => automation.history(limit));
+ipcMain.handle('jarvis:automationClearHistory', () => automation.clearHistory());
+ipcMain.handle('jarvis:automationCheck', () => automation.checkTriggersNow());
+
 ipcMain.on('jarvis:wake-audio', (event, buffer) => {
   if (!wakeEngine || !wakeWindow || event.sender !== wakeWindow.webContents) return;
   if (!(buffer instanceof ArrayBuffer) || buffer.byteLength % 2 !== 0) return;
@@ -1092,6 +1111,54 @@ if (!app.requestSingleInstanceLock()) {
     }
 
     createWindow();
+
+    automation.configure({
+      file: path.join(app.getPath('userData'), 'automation.json'),
+      getWindow: () => win,
+      sampleSystem: async () => (monitor.getConsent() ? monitor.sample() : null),
+      getIdleSeconds: () => powerMonitor.getSystemIdleTime(),
+      getDisplay: () => {
+        const display = screen.getPrimaryDisplay();
+        return {
+          width: display.bounds.width,
+          height: display.bounds.height,
+          scaleFactor: display.scaleFactor,
+        };
+      },
+      confirm: async (routine) => {
+        if (!win) return false;
+        const detail = routine.actions
+          .map((action) => (action.kind === 'open_url' ? `Webseite: ${action.url}` : action.kind))
+          .join(', ');
+        const result = await dialog.showMessageBox(win, {
+          type: 'question',
+          buttons: ['Ausführen', 'Abbrechen'],
+          defaultId: 0,
+          cancelId: 1,
+          noLink: true,
+          title: 'J.A.R.V.I.S. — Bestätigung',
+          message: routine.name,
+          detail: `${detail}\n\nDiese Routine darf erst nach deiner Bestätigung handeln.`,
+        });
+        return result.response === 0;
+      },
+      notify: (title, body, priority) => {
+        try {
+          if (Notification.isSupported()) {
+            new Notification({ title, body, silent: false }).show();
+          }
+        } catch {
+          /* Ohne Benachrichtigungsdienst bleibt der Hinweis im Fenster. */
+        }
+        sendToWin('jarvis:automation-notify', { title, body, priority });
+      },
+      onState: (state) => sendToWin('jarvis:automation-state', state),
+      onBriefing: (payload) => sendToWin('jarvis:automation-briefing', payload),
+      addTimer: (payload) => timers.add(payload),
+      openExternal: (url) => shell.openExternal(url),
+      log: (level, source, message) =>
+        diagnostics.record({ level: level === 'warning' ? 'warning' : 'info', source, message: String(message).slice(0, 240) }),
+    });
 
     updater.configure({
       onChange: (next) => {

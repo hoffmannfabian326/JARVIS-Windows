@@ -1,4 +1,5 @@
 import type { BrainStatus } from '../lib/brain';
+import { CONTEXT_LABEL, type ContextSample } from '../lib/automation';
 import type { Mode } from '../types';
 import { formatClock, formatDateLong } from '../types';
 import { ScopeSweep } from './HudInstruments';
@@ -9,6 +10,8 @@ interface Props {
   aiStatus: BrainStatus | null;
   engineActive: boolean;
   onOpenSettings: () => void;
+  context: ContextSample;
+  onOpenContext: () => void;
 }
 
 const CORE_LABEL: Record<Mode, string> = {
@@ -43,7 +46,7 @@ function Chip({
   );
 }
 
-export default function TopBar({ mode, now, aiStatus, engineActive, onOpenSettings }: Props) {
+export default function TopBar({ mode, now, aiStatus, engineActive, onOpenSettings, context, onOpenContext }: Props) {
   return (
     <header className="topbar">
       <div className="brand">
@@ -106,6 +109,18 @@ export default function TopBar({ mode, now, aiStatus, engineActive, onOpenSettin
       </div>
 
       <div className="top-right">
+        <button
+          type="button"
+          className={`context-indicator context-${context.mode}`}
+          onClick={onOpenContext}
+          title={context.reason}
+        >
+          <span className="context-indicator-dot" aria-hidden="true" />
+          <span>
+            <small>KONTEXT</small>
+            <strong>{CONTEXT_LABEL[context.mode]}</strong>
+          </span>
+        </button>
         <ScopeSweep label="SCAN" tone={mode === 'thinking' ? 'warn' : 'ok'} />
         <div className="clock">
           <strong>{formatClock(now)}</strong>

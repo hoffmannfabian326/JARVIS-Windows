@@ -1655,5 +1655,122 @@ await test('Fehlendes STT-Modell fällt sauber auf SAPI zurück', () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+/* --------------------------------------------------------- Automation */
+
+await test('Automation normalisiert nur registrierte Aktionen', () => {
+  const automation = require('../electron/automation.cjs');
+  const internals = automation._internals;
+  const valid = internals.normalizeRoutine({
+    name: 'Test',
+    trigger: { kind: 'app_start', app: 'WoW.exe' },
+    actions: [{ kind: 'set_mode', mode: 'gaming' }, { kind: 'notify', title: 'Hi', message: 'Test' }],
+  });
+  assert.ok(valid);
+  assert.equal(valid.trigger.app, 'wow.exe');
+  assert.equal(valid.actions.length, 2);
+  assert.equal(valid.enabled, false);
+
+  assert.equal(internals.normalizeRoutine({ name: 'X', trigger: { kind: 'manual' }, actions: [{ kind: 'shell', command: 'x' }] }), null);
+  assert.equal(internals.normalizeRoutine({ name: 'X', trigger: { kind: 'unbekannt' }, actions: [{ kind: 'notify', message: 'x' }] }), null);
+});
+
+await test('Automation prüft Bedingungen mit UND und ODER', () => {
+  const internals = require('../electron/automation.cjs')._internals;
+  const context = {
+    mode: 'gaming',
+    idleSeconds: 30,
+    processes: ['wow', 'chrome'],
+    metrics: { cpu: 92, gpu: 40, ram: 55, temperature: 72 },
+    activeApp: null,
+  };
+  const conditions = [
+    { kind: 'app_running', app: 'wow.exe', running: true },
+    { kind: 'mode', mode: 'gaming' },
+    { kind: 'metric', metric: 'cpu', op: 'above', value: 80 },
+  ];
+  assert.equal(internals.evaluateConditions({ conditions, conditionLogic: 'and' }, context).ok, true);
+  const failed = [...conditions, { kind: 'metric', metric: 'gpu', op: 'above', value: 90 }];
+  assert.equal(internals.evaluateConditions({ conditions: failed, conditionLogic: 'and' }, context).ok, false);
+  assert.equal(internals.evaluateConditions({ conditions: failed, conditionLogic: 'or' }, context).ok, true);
+});
+
+await test('Adaptive Intelligence erkennt Spiele, Arbeit und Standby', () => {
+  const internals = require('../electron/automation.cjs')._internals;
+  const settings = internals.normalizeSettings({ idleMinutes: 10 });
+  assert.ok(settings.profiles.gaming.includes('wow.exe'));
+  assert.equal(internals.appMatches('wow.exe', { process: 'WoW', title: 'World of Warcraft' }), true);
+  assert.equal(internals.appMatches('code.exe', { process: 'chrome', title: 'GitHub' }), false);
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, '0');
+  const from = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const until = `${pad((now.getHours() + 2) % 24)}:${pad(now.getMinutes())}`;
+  assert.equal(internals.inWindow(from, until), true);
+  const outside = `${pad((now.getHours() + 4) % 24)}:00`;
+  const outsideEnd = `${pad((now.getHours() + 5) % 24)}:00`;
+  assert.equal(internals.inWindow(outside, outsideEnd), false);
+});
+
+await test('Automation verweigert teilweise ungültige Entwürfe', () => {
+  const internals = require('../electron/automation.cjs')._internals;
+  assert.equal(
+    internals.normalizeRoutine({
+      name: 'Teilweise böse',
+      trigger: { kind: 'manual' },
+      actions: [{ kind: 'notify', message: 'ok' }, { kind: 'shell', command: 'calc' }],
+    }),
+    null,
+  );
+  assert.equal(
+    internals.normalizeRoutine({
+      name: 'Unvollständig',
+      trigger: { kind: 'manual' },
+      conditions: [{ kind: 'time_window', from: '25:00', to: '26:00' }],
+      actions: [{ kind: 'notify', message: 'ok' }],
+    }),
+    null,
+  );
+});
+
+await test('Adaptive Intelligence priorisiert manuell vor Standby', () => {
+  const automation = require('../electron/automation.cjs');
+  automation.configure({ log: () => {} });
+  const internals = automation._internals;
+  const context = {
+    manual: 'gaming',
+    idleSeconds: 36_000,
+    activeApp: { name: 'Code', process: 'Code', title: 'Projekt', fullscreen: false },
+    processes: ['code'],
+    metrics: { cpu: 4, gpu: 2, ram: 30, temperature: 40 },
+  };
+  assert.equal(internals.resolveMode(context).mode, 'gaming');
+  context.manual = null;
+  assert.equal(internals.resolveMode(context).mode, 'standby');
+  context.idleSeconds = 0;
+  assert.equal(internals.resolveMode(context).mode, 'productivity');
+});
+
+await test('Automation speichert Routinen lokal und validiert sie erneut', () => {
+  const automation = require('../electron/automation.cjs');
+  const dir = tempDir('jarvis-automation-');
+  const file = join(dir, 'automation.json');
+  automation.configure({ file, log: () => {} });
+  const state = automation.getState();
+  assert.ok(state.routines.length >= 5, 'Vorlagen fehlen');
+  const saved = automation.saveRoutine({
+    name: 'Testroutine',
+    trigger: { kind: 'manual' },
+    actions: [{ kind: 'notify', title: 'Test', message: 'gespeichert' }],
+    enabled: true,
+  });
+  assert.equal(saved.ok, true);
+  const stored = JSON.parse(readFileSync(file, 'utf8'));
+  assert.ok(stored.routines.some((routine) => routine.name === 'Testroutine'));
+  assert.equal(stored.settings.enabled, false);
+
+  const rejected = automation.saveRoutine({ name: 'Böse', trigger: { kind: 'manual' }, actions: [{ kind: 'shell', command: 'rm -rf /' }] });
+  assert.equal(rejected.ok, false);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 console.log(`\n${passed} bestanden, ${failed} fehlgeschlagen`);
 process.exitCode = failed === 0 ? 0 : 1;

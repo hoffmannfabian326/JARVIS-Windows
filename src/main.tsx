@@ -4,6 +4,7 @@ import ErrorBoundary from './components/ErrorScreen';
 import { installErrorHandlers } from './lib/diagnostics';
 import './styles.css';
 import './hud.css';
+import './automation.css';
 
 installErrorHandlers();
 

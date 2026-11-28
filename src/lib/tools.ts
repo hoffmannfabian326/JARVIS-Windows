@@ -26,6 +26,7 @@ const CONFIRM_TOOLS = new Set([
   'control_volume',
   'control_media',
   'lock_screen',
+  'propose_automation',
 ]);
 
 const KNOWN_TOOLS = new Set([
@@ -128,6 +129,14 @@ export function describeToolCall(name: string, args: Record<string, unknown>): T
       };
     case 'lock_screen':
       return { title: 'Rechner sperren', detail: 'Der Bildschirm wird sofort gesperrt.', risk: 'high' };
+    case 'propose_automation': {
+      const summary = clip(args.summary || args.description, 400);
+      return {
+        title: 'Automation entwerfen',
+        detail: `${summary || 'Keine Zusammenfassung geliefert.'}\n\nDer Entwurf wird gespeichert und ist danach deaktiviert. Erst im Automation Center prüfen und aktivieren.`,
+        risk: 'normal',
+      };
+    }
     case 'web_search':
       return { title: 'Im Web suchen', detail: clip(args.query, 160), risk: 'normal' };
     default:
