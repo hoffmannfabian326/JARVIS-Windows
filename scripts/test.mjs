@@ -368,6 +368,29 @@ await test('Release-Konfiguration passt zum Auto-Updater', () => {
   assert.ok(publish.includes('latest.yml'));
 });
 
+await test('App-Namen werden auf das richtige Programm abgebildet', () => {
+  const { openAppCommand, resolveAppName } = require('../electron/platform.cjs');
+
+  assert.equal(resolveAppName('Rechner', 'win32'), 'calc');
+  assert.equal(resolveAppName('den Editor', 'win32'), 'notepad');
+  assert.equal(resolveAppName('Einstellungen', 'win32'), 'ms-settings:');
+  assert.equal(resolveAppName('Unbekanntes Programm', 'win32'), 'Unbekanntes Programm');
+  assert.equal(resolveAppName('Rechner', 'darwin'), 'Calculator');
+
+  const calc = openAppCommand('Taschenrechner', 'win32');
+  assert.equal(calc.command, 'cmd.exe');
+  assert.equal(calc.args.at(-1), '"calc"');
+
+  const chrome = openAppCommand('Chrome', 'win32');
+  assert.equal(chrome.args.at(-1), '"chrome"');
+
+  const mac = openAppCommand('Rechner', 'darwin');
+  assert.deepEqual(mac.args, ['-a', 'Calculator']);
+
+  const evil = openAppCommand('calc & del *.*', 'win32');
+  assert.equal(evil.error, 'invalid_name');
+});
+
 /* ------------------------------------------------------------ Sprachausgabe */
 
 await test('Build enthält keine Windows-/Browser-Standardstimme', () => {

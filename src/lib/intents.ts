@@ -74,6 +74,7 @@ const SITES: Record<string, string> = {
   karten: 'https://www.google.com/maps',
   maps: 'https://www.google.com/maps',
   chatgpt: 'https://chatgpt.com',
+  deepseek: 'https://chat.deepseek.com',
   tagesschau: 'https://www.tagesschau.de',
   heise: 'https://www.heise.de',
   reddit: 'https://www.reddit.com',
@@ -81,7 +82,79 @@ const SITES: Record<string, string> = {
   whatsapp: 'https://web.whatsapp.com',
   stackoverflow: 'https://stackoverflow.com',
   wetter: 'https://www.wetter.de',
+  ard: 'https://www.ardmediathek.de',
+  zdf: 'https://www.zdf.de',
+  ebay: 'https://www.ebay.de',
+  kleinanzeigen: 'https://www.kleinanzeigen.de',
+  idealo: 'https://www.idealo.de',
+  übersetzer: 'https://translate.google.com',
+  uebersetzer: 'https://translate.google.com',
+  translate: 'https://translate.google.com',
+  twitch: 'https://www.twitch.tv',
+  discord: 'https://discord.com/app',
+  outlook: 'https://outlook.live.com',
+  drive: 'https://drive.google.com',
+  kalender: 'https://calendar.google.com',
+  twitter: 'https://x.com',
+  facebook: 'https://www.facebook.com',
+  tiktok: 'https://www.tiktok.com',
 };
+
+/**
+ * Programme, die auf dem Rechner gestartet werden dürfen. Die Namen sind
+ * gesprochene Alltagsbegriffe; welche Datei dahinter steckt, entscheidet
+ * electron/platform.cjs je nach System.
+ */
+const APP_WORDS = new Set([
+  'chrome',
+  'google chrome',
+  'edge',
+  'microsoft edge',
+  'firefox',
+  'notepad',
+  'editor',
+  'rechner',
+  'taschenrechner',
+  'calculator',
+  'explorer',
+  'dateimanager',
+  'dateien',
+  'terminal',
+  'powershell',
+  'eingabeaufforderung',
+  'cmd',
+  'einstellungen',
+  'settings',
+  'taskmanager',
+  'task-manager',
+  'paint',
+  'word',
+  'excel',
+  'powerpoint',
+  'outlook',
+  'spotify',
+  'discord',
+  'steam',
+  'vscode',
+  'visual studio code',
+  'teams',
+  'zoom',
+  'telegram',
+  'whatsapp',
+]);
+
+/** Suchziele für „suche auf YouTube nach …“. */
+const SEARCH_TARGETS: Record<string, string> = {
+  youtube: 'https://www.youtube.com/results?search_query=',
+  google: 'https://www.google.com/search?q=',
+  wikipedia: 'https://de.wikipedia.org/w/index.php?search=',
+  amazon: 'https://www.amazon.de/s?k=',
+  github: 'https://github.com/search?q=',
+  maps: 'https://www.google.com/maps/search/',
+  bilder: 'https://www.google.com/search?tbm=isch&q=',
+};
+
+const capitalize = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1);
 
 const numberFormat = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 4 });
 
@@ -195,7 +268,9 @@ export async function handleCommand(raw: string, ctx: JarvisContext): Promise<Ja
       speak:
         'Ich höre auf mein Weckwort. Ich nenne Uhrzeit und Datum, melde das Wetter, stelle Timer und Wecker, ' +
         'speichere und lese Notizen vor, merke mir Fakten und Vorlieben dauerhaft, rechne Aufgaben, öffne Webseiten, ' +
+        'starte Programme wie Chrome, Spotify oder den Rechner, stelle die Lautstärke, sperre den Bildschirm, ' +
         'suche im Netz und nenne dabei die Quellen, beschreibe deinen Bildschirm und erzähle Witze. ' +
+        'Zum Beispiel: Öffne YouTube, öffne Notepad, suche auf YouTube nach Katzenvideos, suche auf Wikipedia nach Turing. ' +
         'Mit „Guten Morgen“ bekommst du einen Kurzbericht aus Wetter, Timern und Notizen, mit „Feierabend“ die Zusammenfassung des Tages. ' +
         'Sage zum Beispiel: Jarvis, Wetter in Hamburg. Oder: Jarvis, was steht auf dem Bildschirm? ' +
         'Und du kannst mich mitten im Satz unterbrechen — ich höre sofort auf.',
@@ -402,16 +477,44 @@ export async function handleCommand(raw: string, ctx: JarvisContext): Promise<Ja
     return ctx.desktop ? ctx.desktop.openApp(name) : needsDesktop();
   }
 
-  // Webseite öffnen
-  const openMatch =
-    text.match(/^(?:öffne|oeffne|starte|geh auf|gehe auf)\s+(.+?)(?:\s+auf)?$/i) ??
-    text.match(/^mach\s+(.+?)\s+auf$/i);
+  // Gezielte Suche: „suche auf YouTube nach Katzenvideos“ oder „youtube Katzenvideos“.
+  const targetSearch =
+    text.match(/^(?:suche|such)\s+(?:auf|bei|in)\s+(\S+)\s+(?:nach\s+)?(.+)$/i) ??
+    text.match(/^(youtube|google|wikipedia|amazon|github|maps|bilder)\s+(?:nach\s+)?(.+)$/i);
+  if (targetSearch) {
+    const service = targetSearch[1].toLowerCase().replace(/[.!?]+$/, '');
+    const query = targetSearch[2].replace(/[.!?]+$/, '').trim();
+    if (query) {
+      const base = SEARCH_TARGETS[service];
+      return {
+        speak: base
+          ? `Ich suche auf ${capitalize(service)} nach ${query}.`
+          : `Ich suche nach ${service} ${query}.`,
+        url: base
+          ? `${base}${encodeURIComponent(query)}`
+          : `https://www.google.com/search?q=${encodeURIComponent(`${service} ${query}`)}`,
+      };
+    }
+  }
+
+  // Webseite oder Programm öffnen
+  const openMatch = text.match(/^(?:öffne|oeffne|starte|geh auf|gehe auf|mach)\s+(.+?)(?:\s+auf)?$/i);
   if (openMatch) {
     const target = openMatch[1].replace(/[.!?]+$/, '').trim();
-    const lower = target.toLowerCase();
+    const lower = target
+      .toLowerCase()
+      .replace(/^(den|die|das)\s+/, '')
+      .trim();
+
+    // Bekannte Programme zuerst: „öffne Spotify“ soll die App starten, nicht den Webplayer.
+    if (APP_WORDS.has(lower)) {
+      // Groß geschrieben, damit die Ansage „Notepad wird gestartet“ lautet.
+      return ctx.desktop ? ctx.desktop.openApp(capitalize(lower)) : needsDesktop();
+    }
+
     const key = Object.keys(SITES).find((name) => lower.includes(name));
     if (key) {
-      return { speak: `${key.charAt(0).toUpperCase()}${key.slice(1)} wird geöffnet.`, url: SITES[key] };
+      return { speak: `${capitalize(key)} wird geöffnet.`, url: SITES[key] };
     }
     if (/^[\w-]+(\.[\w-]+)+$/.test(lower)) {
       return { speak: `Ich öffne ${target}.`, url: `https://${lower}` };
