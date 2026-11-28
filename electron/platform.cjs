@@ -210,10 +210,81 @@ function openAppCommand(name, platform = process.platform) {
   };
 }
 
+/** Browser, die statt des Systemstandards gewählt werden können. */
+const BROWSER_ALIASES = {
+  win32: {
+    chrome: 'chrome',
+    edge: 'msedge',
+    firefox: 'firefox',
+    brave: 'brave',
+    opera: 'opera',
+    vivaldi: 'vivaldi',
+  },
+  darwin: {
+    chrome: 'Google Chrome',
+    edge: 'Microsoft Edge',
+    firefox: 'Firefox',
+    brave: 'Brave Browser',
+    opera: 'Opera',
+    vivaldi: 'Vivaldi',
+  },
+  linux: {
+    chrome: 'google-chrome',
+    edge: 'microsoft-edge',
+    firefox: 'firefox',
+    brave: 'brave-browser',
+    opera: 'opera',
+    vivaldi: 'vivaldi',
+  },
+};
+
+const SUPPORTED_BROWSERS = ['chrome', 'edge', 'firefox', 'brave', 'opera', 'vivaldi'];
+
+function safeUrl(value) {
+  try {
+    const url = new URL(String(value ?? '').trim());
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+    if (url.username || url.password) return '';
+    return url.href;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * null bedeutet: Systemstandard (die App ruft dann shell.openExternal auf).
+ * Ein unbekannter Browser fällt bewusst ebenfalls auf den Standard zurück,
+ * damit ein alter Eintrag in den Einstellungen nichts blockiert.
+ */
+function openUrlCommand(url, browser, platform = process.platform) {
+  const target = safeUrl(url);
+  if (!target) return { error: 'invalid_url' };
+
+  const wanted = String(browser ?? '').trim().toLowerCase();
+  if (!wanted) return null;
+  const app = (BROWSER_ALIASES[platform] || {})[wanted];
+  if (!app) return null;
+
+  if (platform === 'darwin') {
+    return { command: 'open', args: ['-a', app, target], fallback: { command: 'open', args: [target] } };
+  }
+  if (platform === 'linux') {
+    return { command: app, args: [target], fallback: { command: 'xdg-open', args: [target] } };
+  }
+  return {
+    command: 'cmd.exe',
+    args: ['/c', 'start', '""', `"${app}"`, `"${target}"`],
+    windowsVerbatimArguments: true,
+  };
+}
+
 module.exports = {
   mediaCommand,
   volumeCommand,
   lockCommand,
   openAppCommand,
+  openUrlCommand,
   resolveAppName,
+  safeUrl,
+  SUPPORTED_BROWSERS,
 };

@@ -307,6 +307,8 @@ export interface DesktopBridge {
   platform: string;
   onHotkey: (callback: () => void) => () => void;
   openApp: (name: string) => Promise<DesktopResult>;
+  /** Browser leer = Standardbrowser des Systems. */
+  openUrl?: (url: string, browser?: string) => Promise<DesktopResult>;
   volume: (direction: 'up' | 'down' | 'mute') => Promise<DesktopResult>;
   media: (action: 'playpause' | 'next' | 'previous') => Promise<DesktopResult>;
   lock: () => Promise<DesktopResult>;

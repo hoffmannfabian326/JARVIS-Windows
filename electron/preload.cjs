@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('jarvisDesktop', {
     return () => ipcRenderer.removeListener('jarvis:hotkey', listener);
   },
   openApp: (name) => ipcRenderer.invoke('jarvis:openApp', name),
+  openUrl: (url, browser) => ipcRenderer.invoke('jarvis:openUrl', url, browser ?? ''),
   volume: (direction) => ipcRenderer.invoke('jarvis:volume', direction),
   media: (action) => ipcRenderer.invoke('jarvis:media', action),
   lock: () => ipcRenderer.invoke('jarvis:lock'),

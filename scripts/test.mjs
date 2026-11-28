@@ -391,6 +391,27 @@ await test('App-Namen werden auf das richtige Programm abgebildet', () => {
   assert.equal(evil.error, 'invalid_name');
 });
 
+await test('Links öffnen im gewählten Browser, sonst im Systemstandard', () => {
+  const { openUrlCommand } = require('../electron/platform.cjs');
+
+  assert.equal(openUrlCommand('https://example.com', ''), null);
+  assert.equal(openUrlCommand('https://example.com', 'unbekannt'), null);
+
+  const win = openUrlCommand('https://example.com/a?b=1', 'chrome', 'win32');
+  assert.equal(win.command, 'cmd.exe');
+  assert.deepEqual(win.args.slice(-2), ['"chrome"', '"https://example.com/a?b=1"']);
+
+  const mac = openUrlCommand('https://example.com', 'firefox', 'darwin');
+  assert.deepEqual(mac.args, ['-a', 'Firefox', 'https://example.com/']);
+
+  const linux = openUrlCommand('https://example.com', 'brave', 'linux');
+  assert.deepEqual(linux.args, ['https://example.com/']);
+
+  assert.equal(openUrlCommand('javascript:alert(1)', 'chrome', 'win32').error, 'invalid_url');
+  assert.equal(openUrlCommand('file:///C:/Windows', 'chrome', 'win32').error, 'invalid_url');
+  assert.equal(openUrlCommand('https://user:geheim@example.com', 'chrome', 'win32').error, 'invalid_url');
+});
+
 /* ------------------------------------------------------------ Sprachausgabe */
 
 await test('Build enthält keine Windows-/Browser-Standardstimme', () => {

@@ -32,6 +32,8 @@ export interface Settings {
   volume: number;
   city: string;
   micDeviceId: string;
+  /** Browser für Links; leer = Standardbrowser des Systems. */
+  browser: string;
   wakeOnBattery: boolean;
   /** Push-to-talk und Weckwort nehmen über SAPI einen ganzen Befehl auf. */
   voiceCommands: boolean;
@@ -66,6 +68,7 @@ export const DEFAULT_SETTINGS: Settings = {
   volume: 1,
   city: 'Berlin',
   micDeviceId: '',
+  browser: '',
   wakeOnBattery: true,
   voiceCommands: true,
   localStt: false,

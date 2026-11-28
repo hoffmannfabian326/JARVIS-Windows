@@ -145,6 +145,28 @@ function httpUrl(value: unknown): string {
   }
 }
 
+/**
+ * Öffnet einen Link im gewählten Browser (Desktop-App) oder in einem neuen
+ * Tab. false bedeutet: nichts hat sich geöffnet.
+ */
+async function openLink(url: string, browser: string): Promise<boolean> {
+  const desktop = getDesktop();
+  if (desktop?.openUrl) {
+    try {
+      const result = await desktop.openUrl(url, browser);
+      return Boolean(result?.ok);
+    } catch {
+      return false;
+    }
+  }
+  try {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function useJarvis() {
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const settingsRef = useRef(settings);
@@ -1186,9 +1208,7 @@ export function useJarvis() {
             const url = httpUrl(args.url);
             if (!url) return { ok: false, error: 'Nur vollständige http- oder https-Adressen sind erlaubt.' };
             pushEntry({ role: 'system', text: `Öffne: ${url}`, url });
-            try {
-              window.open(url, '_blank', 'noopener,noreferrer');
-            } catch {
+            if (!(await openLink(url, settingsRef.current.browser || ''))) {
               return { ok: false, error: 'Die Webseite ließ sich nicht öffnen.' };
             }
             return { ok: true, url };
@@ -1401,11 +1421,8 @@ export function useJarvis() {
 
       if (reply.url) {
         pushEntry({ role: 'system', text: `Öffne: ${reply.url}`, url: reply.url });
-        try {
-          window.open(reply.url, '_blank', 'noopener,noreferrer');
-        } catch {
-          /* Popup blockiert – Link bleibt im Protokoll anklickbar */
-        }
+        // Der Link bleibt im Protokoll anklickbar, auch wenn kein Browser startet.
+        await openLink(reply.url, settingsRef.current.browser || '');
       }
 
       if (reply.sources?.length) {

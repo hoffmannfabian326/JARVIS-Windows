@@ -19,7 +19,7 @@ const {
   Notification,
   desktopCapturer,
 } = require('electron');
-const { mediaCommand, volumeCommand, lockCommand, openAppCommand } = require('./platform.cjs');
+const { mediaCommand, volumeCommand, lockCommand, openAppCommand, openUrlCommand } = require('./platform.cjs');
 const { WakeEngine } = require('./wake/engine.cjs');
 const monitor = require('./monitor.cjs');
 const dictation = require('./dictation/index.cjs');
@@ -790,6 +790,20 @@ ipcMain.handle('jarvis:volume', (_event, direction) => runSpec(volumeCommand(dir
 ipcMain.handle('jarvis:media', (_event, action) => runSpec(mediaCommand(action)));
 ipcMain.handle('jarvis:lock', () => runSpec(lockCommand()));
 ipcMain.handle('jarvis:openApp', (_event, name) => runSpec(openAppCommand(name)));
+
+// Links gehen an den in den Einstellungen gewählten Browser; ohne Auswahl
+// öffnet das System seinen Standardbrowser.
+ipcMain.handle('jarvis:openUrl', async (_event, url, browser) => {
+  const spec = openUrlCommand(url, browser);
+  if (spec?.error) return { ok: false, message: 'Nur http- und https-Adressen.' };
+  if (spec) return runSpec(spec);
+  try {
+    await shell.openExternal(String(url));
+    return { ok: true, message: 'Standardbrowser' };
+  } catch (error) {
+    return { ok: false, message: String(error?.message ?? error).slice(0, 160) };
+  }
+});
 ipcMain.handle('jarvis:desktopInfo', () => ({
   platform: process.platform,
   hotkey: hotkeys.listen,

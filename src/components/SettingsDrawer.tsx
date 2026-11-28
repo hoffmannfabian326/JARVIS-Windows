@@ -283,6 +283,33 @@ const TOOL_LABELS: Record<string, string> = {
           </p>
         </section>
 
+        {desktop ? (
+          <section className="drawer-section">
+            <h3>Browser</h3>
+            <label className="field">
+              <span>Links öffnen mit</span>
+              <select
+                className="select"
+                value={settings.browser}
+                onChange={(event) => updateSettings({ browser: event.target.value })}
+              >
+                <option value="">Systemstandard</option>
+                <option value="chrome">Google Chrome</option>
+                <option value="edge">Microsoft Edge</option>
+                <option value="firefox">Firefox</option>
+                <option value="brave">Brave</option>
+                <option value="opera">Opera</option>
+                <option value="vivaldi">Vivaldi</option>
+              </select>
+            </label>
+            <p className="field-hint">
+              Gilt für alle Webseiten, die Jarvis öffnet — per Sprache („Öffne YouTube“) wie über die KI. „Systemstandard“
+              nimmt den in Windows eingestellten Browser; ist der gewählte Browser nicht installiert, weicht Jarvis
+              ebenfalls darauf aus.
+            </p>
+          </section>
+        ) : null}
+
         <section className="drawer-section">
           <h3>Stimme</h3>
           <label className="field">
