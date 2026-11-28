@@ -136,25 +136,25 @@ jobs:
         run: node scripts/publish-release.mjs
 
       - name: Öffentlichen Kanal prüfen
-        shell: pwsh
+        shell: bash
         env:
           VERSION: ${{ steps.version.outputs.version }}
           TAG: ${{ github.ref_name }}
         run: |
-          $url = "https://github.com/$env:RELEASES_OWNER/$env:RELEASES_REPO/releases/download/$env:TAG/latest.yml"
-          $pattern = 'version:\s*' + [regex]::Escape($env:VERSION) + '\s*(\r?\n|$)'
+          url="https://github.com/$RELEASES_OWNER/$RELEASES_REPO/releases/download/$TAG/latest.yml"
           # Frisch hochgeladene Release-Dateien sind nicht sofort über die
-          # Download-URL erreichbar; deshalb großzügig warten.
-          for ($attempt = 1; $attempt -le 12; $attempt++) {
-            try {
-              if ((Invoke-WebRequest $url -UseBasicParsing -TimeoutSec 20).Content -match $pattern) {
-                Write-Host "Kanal in Ordnung: $env:VERSION"
-                exit 0
-              }
-            } catch { }
-            Start-Sleep -Seconds 10
-          }
-          throw "latest.yml unter $url meldet nicht $env:VERSION."
+          # Download-URL erreichbar; deshalb großzügig warten. curl statt
+          # Invoke-WebRequest, weil dessen Content bei application/octet-stream
+          # kein Text ist und der Vergleich dann still fehlschlägt.
+          for attempt in $(seq 1 12); do
+            if curl -fsSL --max-time 20 "$url" | tr -d '\r' | grep -qxF "version: $VERSION"; then
+              echo "Kanal in Ordnung: $VERSION"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "latest.yml unter $url meldet nicht $VERSION." >&2
+          exit 1
 
       # Nur bei Fehler: die Ausgaben bleiben sieben Tage als Download liegen.
       - name: Build-Ausgaben sichern
