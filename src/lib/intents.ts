@@ -4,6 +4,7 @@ import { parseDuration } from './numbers';
 import { getWeatherReport } from './weather';
 import { matchRoutine, runRoutine } from './routines';
 import { getDesktop } from './desktop';
+import type { GamingSnapshot } from './gaming';
 
 export interface DesktopActions {
   openApp: (name: string) => Promise<JarvisReply>;
@@ -14,6 +15,12 @@ export interface DesktopActions {
   setVolume?: (percent: number) => Promise<JarvisReply>;
   media: (action: 'playpause' | 'next' | 'previous') => Promise<JarvisReply>;
   lock: () => Promise<JarvisReply>;
+  gamingState?: () => Promise<{ ok: boolean; error?: string; snapshot?: GamingSnapshot }>;
+  gamingLaunch?: (id: string) => Promise<{ ok: boolean; error?: string; snapshot?: GamingSnapshot }>;
+  gamingStop?: () => Promise<{ ok: boolean; error?: string; snapshot?: GamingSnapshot }>;
+  gamingSettings?: (patch: Record<string, unknown>) => Promise<{ ok: boolean; error?: string; snapshot?: GamingSnapshot }>;
+  gamingWowLaunch?: () => Promise<{ ok: boolean; error?: string }>;
+  gamingCompanionAction?: (action: 'chat' | 'voice' | 'hub') => Promise<{ ok: boolean }>;
 }
 
 export interface JarvisContext {
@@ -338,6 +345,139 @@ export async function handleCommand(raw: string, ctx: JarvisContext): Promise<Ja
         'Und du kannst mich mitten im Satz unterbrechen — ich höre sofort auf. ' +
         'Nach einer Antwort bleibt ein kurzes Nachfrage-Fenster offen: In diesen Sekunden brauchst du das Weckwort nicht erneut zu sagen.',
     };
+  }
+
+  // ---------------------------------------------------------------- Gaming Hub
+  // Der Gaming Hub liefert seine lokale Bibliothek und Sitzungswerte über die
+  // Desktop-Bridge. Die Sprachbefehle erfinden keine Werte, wenn keine Daten
+  // vorliegen, und starten ausschließlich Spiele aus der geprüften Bibliothek.
+  if (ctx.desktop?.gamingState) {
+    let gamingSnapshot: GamingSnapshot | undefined;
+    const loadGaming = async (): Promise<GamingSnapshot | undefined> => {
+      if (gamingSnapshot) return gamingSnapshot;
+      try {
+        const state = await ctx.desktop!.gamingState!();
+        gamingSnapshot = state?.snapshot;
+      } catch {
+        /* Der Hinweis unten erklärt den fehlenden Dienst. */
+      }
+      return gamingSnapshot;
+    };
+
+    if (/(gaming hub|gaming-hub|gaming kommandozentrale)/.test(t) && /(öffne|oeffne|zeig|starte|hol)/.test(t)) {
+      await ctx.desktop.gamingCompanionAction?.('hub');
+      return { speak: 'Der Gaming Hub wird geöffnet.' };
+    }
+
+    if (/(gaming protocol|gaming-protokoll)/.test(t) && /(aktivier|einschalt|anschalt|starte|an)/.test(t)) {
+      const result = await ctx.desktop.gamingSettings?.({
+        autoGamingMode: true,
+        autoProfile: true,
+        autoSession: true,
+        autoReport: true,
+      });
+      return {
+        speak: result?.ok
+          ? 'Das Gaming Protocol ist aktiviert. Beim nächsten Spielstart werden Profil, Gaming Mode und Sitzungsbericht automatisch vorbereitet.'
+          : `Das Gaming Protocol ließ sich nicht aktivieren${result?.error ? `: ${result.error}` : '.'}`,
+      };
+    }
+
+    if (/(beende|beendet|stoppe|stop|schließe|schliesse).*(spiel|sitzung|gaming)/.test(t)) {
+      const result = await ctx.desktop.gamingStop?.();
+      return {
+        speak: result?.ok
+          ? 'Die Spielsitzung ist beendet. Der Bericht wurde lokal vorbereitet.'
+          : `Es läuft keine Spielsitzung${result?.error ? `: ${result.error}` : '.'}`,
+      };
+    }
+
+    if (
+      /(temperatur|temperaturen|systemwert|systemwerte|hardwarewert|hardwarewerte|cpu|gpu)/.test(t) &&
+      /(sitzung|spiel|gaming|letzte|letzten)/.test(t)
+    ) {
+      const gaming = await loadGaming();
+      const session = gaming?.sessions[0];
+      if (!gaming) return { speak: 'Der Gaming-Dienst antwortet gerade nicht.' };
+      if (!session) return { speak: 'Es ist noch keine Spielsitzung mit Messwerten gespeichert.' };
+      const temps = [session.maxCpuTemp, session.maxGpuTemp].filter((value): value is number => value != null);
+      const maxTemp = temps.length ? Math.max(...temps) : null;
+      const cpu = session.avgCpu == null ? 'keine CPU-Messung' : `CPU im Mittel ${Math.round(session.avgCpu)} Prozent`;
+      const gpu = session.avgGpu == null ? 'keine GPU-Messung' : `GPU im Mittel ${Math.round(session.avgGpu)} Prozent`;
+      const thermal = maxTemp == null ? 'keine Temperaturwerte' : `maximal ${Math.round(maxTemp)} Grad`;
+      const notes = session.anomalies.length ? ` Auffällig: ${session.anomalies.join(' ')}` : ' Es gab keine Auffälligkeiten.';
+      return {
+        speak: `Letzte Sitzung: ${session.gameName}, ${Math.round(session.durationSeconds / 60)} Minuten. ${cpu}, ${gpu}, ${thermal}.${notes}`,
+      };
+    }
+
+    if (/(wow forever|world of warcraft|\bwow\b)/.test(t) && /(neu|news|neues|patch|änder|aender)/.test(t)) {
+      const gaming = await loadGaming();
+      if (!gaming) return { speak: 'Der Gaming-Dienst antwortet gerade nicht.' };
+      const articles = gaming.articles.filter((article) => article.game === 'wow').slice(0, 3);
+      if (!articles.length) {
+        return {
+          speak:
+            'Für WoW Forever sind noch keine Meldungen geladen. Hinterlege im Gaming Hub unter News eine offizielle RSS-Quelle; ich erfinde keine Patch- oder Servernews.',
+        };
+      }
+      return {
+        speak: `Aus deinen WoW-Quellen: ${articles.map((article) => article.title).join('. ')}.`,
+        url: articles[0].url,
+        sources: articles.map((article) => ({ title: article.sourceName, url: article.url })),
+      };
+    }
+
+    if (/(gaming news|gaming-news|spiele news|spiel news)/.test(t) && /(neu|news|neues|zusammenfass|fass)/.test(t)) {
+      const gaming = await loadGaming();
+      const articles = gaming?.articles.filter((article) => article.game !== 'wow').slice(0, 3) || [];
+      if (!articles.length) return { speak: 'Es sind noch keine Gaming-News aus deinen Quellen geladen.' };
+      return { speak: `Aktuelle Gaming-Meldungen: ${articles.map((article) => article.title).join('. ')}.` };
+    }
+
+    if (/(guide|anleitung|build)/.test(t) && /(raid|dungeon|klasse|wow|spiel|nächste|naechste)/.test(t)) {
+      const gaming = await loadGaming();
+      const guides = gaming?.guides || [];
+      const wanted = /raid/.test(t) ? 'raid' : /dungeon/.test(t) ? 'dungeon' : /klasse/.test(t) ? 'class' : '';
+      const matches = wanted
+        ? guides.filter((guide) => guide.category === wanted || guide.title.toLowerCase().includes(wanted))
+        : guides;
+      if (!matches.length) {
+        return { speak: 'Dazu ist noch kein Guide hinterlegt. Du kannst ihn im Gaming Hub unter Guides anlegen.' };
+      }
+      const guide = matches[0];
+      return {
+        speak: `Ich habe ${guide.title} hinterlegt${matches.length > 1 ? ` und ${matches.length - 1} weitere` : ''}. Ich öffne den Guide.`,
+        url: guide.url,
+      };
+    }
+
+    const launchMatch = text.match(/^(?:starte|öffne|oeffne|spiele)\s+(?:mir\s+)?(?:das\s+spiel\s+)?(.+)$/i);
+    if (launchMatch) {
+      const target = launchMatch[1].replace(/[.!?]+$/, '').trim().toLowerCase();
+      if (target && !/gaming hub|gaming protocol|gaming-protokoll/.test(target)) {
+        const gaming = await loadGaming();
+        const game = gaming?.games.find((entry) => {
+          const name = entry.name.toLowerCase();
+          return name === target || name.includes(target) || target.includes(name) || (target === 'wow' && name.includes('world of warcraft'));
+        });
+        if (game) {
+          if (gaming?.activeSession) {
+            return { speak: `Es läuft bereits ${gaming.activeSession.gameName}. Beende zuerst die laufende Sitzung.` };
+          }
+          const result = await ctx.desktop.gamingLaunch?.(game.id);
+          return {
+            speak: result?.ok
+              ? `${game.name} wird gestartet. Das Gaming Protocol übernimmt das Profil.`
+              : `Ich konnte ${game.name} nicht starten${result?.error ? `: ${result.error}` : '.'}`,
+          };
+        }
+        if (/\bwow\b|world of warcraft/.test(target) && /(launcher|start)/.test(target)) {
+          const result = await ctx.desktop.gamingWowLaunch?.();
+          return { speak: result?.ok ? 'Der WoW-Launcher wird gestartet.' : `Der WoW-Launcher ließ sich nicht starten${result?.error ? `: ${result.error}` : '.'}` };
+        }
+      }
+    }
   }
 
   // Bildschirm verstehen: ausdrücklich nur auf Zuruf.

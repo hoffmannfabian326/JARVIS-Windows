@@ -745,7 +745,48 @@ export function useJarvis() {
 
       try {
         const relevantMemories = memoryRef.current.search(question, 4).map((entry) => entry.item.text);
-        const result = await askBrain(question, historyRef.current, relevantMemories, {
+        let brainQuestion = question;
+        // Gaming-Fragen bekommen den lokalen Hub-Zustand mit, damit das Modell
+        // nicht über Spiele, Sitzungen oder Quellen spekuliert.
+        if (/(gaming|spiel|wow|world of warcraft|raid|dungeon|klasse|build|patchnote|fps|gpu|vram|sitzung)/i.test(question)) {
+          try {
+            const state = await getDesktop()?.gamingState?.();
+            const gaming = state?.snapshot;
+            if (gaming) {
+              const active = gaming.activeSession;
+              const last = gaming.sessions[0];
+              const lines = [
+                'Lokaler Gaming-Hub-Kontext (nur diese Angaben verwenden, nichts erfinden):',
+                gaming.games.length
+                  ? `Bibliothek: ${gaming.games.slice(0, 10).map((entry) => `${entry.name} (${entry.launcher}, ${Math.round(entry.playtimeSeconds / 60)} Min.)`).join('; ')}.`
+                  : 'Die Spielebibliothek ist leer.',
+                active
+                  ? `Aktive Sitzung: ${active.gameName}, ${Math.round(active.elapsedSeconds / 60)} Minuten, CPU ${active.live.cpu ?? 'unbekannt'} %, GPU ${active.live.gpu ?? 'unbekannt'} %, RAM ${active.live.ram ?? 'unbekannt'} %.`
+                  : 'Keine aktive Spielsitzung.',
+                last
+                  ? `Letzte Sitzung: ${last.gameName}, ${Math.round(last.durationSeconds / 60)} Minuten, CPU Ø ${last.avgCpu ?? 'unbekannt'} %, GPU Ø ${last.avgGpu ?? 'unbekannt'} %, max. Temperatur ${Math.max(last.maxCpuTemp ?? 0, last.maxGpuTemp ?? 0) || 'unbekannt'} Grad. Auffälligkeiten: ${last.anomalies.join(' ') || 'keine'}.`
+                  : 'Kein Sitzungsbericht vorhanden.',
+                gaming.guides.length
+                  ? `Guides: ${gaming.guides
+                      .slice(0, 8)
+                      .map((guide) => `${guide.title} (${guide.url})`)
+                      .join('; ')}.`
+                  : 'Keine Guides hinterlegt.',
+                gaming.articles.length
+                  ? `News: ${gaming.articles.slice(0, 6).map((article) => article.title).join('; ')}.`
+                  : 'Keine News geladen.',
+                gaming.wow.events.length
+                  ? `WoW-Termine: ${gaming.wow.events.slice(0, 5).map((event) => `${event.title} (${new Date(event.at).toLocaleString('de-DE')})`).join('; ')}.`
+                  : 'Keine WoW-Termine hinterlegt.',
+                'Fehlende Werte ausdrücklich als nicht verfügbar bezeichnen.',
+              ];
+              brainQuestion = `${question}\n\n${lines.join('\n')}`;
+            }
+          } catch {
+            /* Ohne Desktop-Bridge bleibt die Frage unverändert. */
+          }
+        }
+        const result = await askBrain(brainQuestion, historyRef.current, relevantMemories, {
           onToolCall: (call) => runToolRef.current(call),
           onDelta: (chunk) => {
             streamed += chunk;
@@ -942,6 +983,16 @@ export function useJarvis() {
         const result = await desktop.lock();
         return { speak: result.ok ? 'Der Rechner wird gesperrt.' : 'Sperren hat nicht funktioniert.' };
       },
+      gamingState: desktop.gamingState ? () => desktop.gamingState!() : undefined,
+      gamingLaunch: desktop.gamingLaunch ? (id) => desktop.gamingLaunch!(id) : undefined,
+      gamingStop: desktop.gamingStop ? () => desktop.gamingStop!() : undefined,
+      gamingSettings: desktop.gamingSettings
+        ? (patch) => desktop.gamingSettings!(patch as Parameters<NonNullable<typeof desktop.gamingSettings>>[0])
+        : undefined,
+      gamingWowLaunch: desktop.gamingWowLaunch ? () => desktop.gamingWowLaunch!() : undefined,
+      gamingCompanionAction: desktop.gamingCompanionAction
+        ? (action) => desktop.gamingCompanionAction!(action)
+        : undefined,
     };
   }, []);
 

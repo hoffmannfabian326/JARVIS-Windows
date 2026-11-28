@@ -1,3 +1,5 @@
+import type { GamingLauncher, GamingResult, GamingSnapshot } from './gaming';
+
 export interface DesktopResult {
   ok: boolean;
   message?: string;
@@ -63,7 +65,13 @@ export interface DictationResult {
 export interface TelemetrySample {
   at: number;
   cpu: { load: number | null; temp: number | null; cores: number | null };
-  gpu: { name: string | null; load: number | null; temp: number | null };
+  gpu: {
+    name: string | null;
+    load: number | null;
+    temp: number | null;
+    vramUsed?: number | null;
+    vramTotal?: number | null;
+  };
   mem: { used: number; total: number; percent: number } | null;
   disk: { used: number; size: number; percent: number; mount: string | null } | null;
   net: { down: number; up: number } | null;
@@ -330,6 +338,20 @@ export interface AutomationBriefing {
   prompt: string;
 }
 
+export interface GamingGameInput {
+  name: string;
+  launcher: GamingLauncher;
+  exe?: string;
+  args?: string;
+  uri?: string;
+  process?: string;
+  installDir?: string;
+  genre?: string;
+  description?: string;
+  coverUrl?: string;
+  heroUrl?: string;
+}
+
 export interface DesktopBridge {
   isDesktop: true;
   platform: string;
@@ -438,6 +460,36 @@ export interface DesktopBridge {
   onAutomationState?: (callback: (snapshot: unknown) => void) => () => void;
   onAutomationNotify?: (callback: (payload: { title: string; body: string; priority: number }) => void) => () => void;
   onAutomationBriefing?: (callback: (payload: AutomationBriefing) => void) => () => void;
+  gamingState?: () => Promise<GamingResult>;
+  gamingDetect?: () => Promise<GamingResult>;
+  gamingLaunch?: (id: string) => Promise<GamingResult>;
+  gamingStop?: () => Promise<GamingResult>;
+  gamingSettings?: (patch: Partial<GamingSnapshot['settings']>) => Promise<GamingResult>;
+  gamingSelect?: (id: string) => Promise<GamingResult>;
+  gamingAddGame?: (input: GamingGameInput) => Promise<GamingResult>;
+  gamingUpdateGame?: (id: string, patch: Record<string, unknown>) => Promise<GamingResult>;
+  gamingRemoveGame?: (id: string) => Promise<GamingResult>;
+  gamingProfileSave?: (profile: Record<string, unknown>) => Promise<GamingResult>;
+  gamingProfileDelete?: (id: string) => Promise<GamingResult>;
+  gamingAssetUpload?: (dataUrl: string) => Promise<GamingResult>;
+  gamingArtwork?: (id: string, kind: 'cover' | 'hero') => Promise<GamingResult>;
+  gamingSourceSave?: (source: Record<string, unknown>) => Promise<GamingResult>;
+  gamingSourceRemove?: (id: string) => Promise<GamingResult>;
+  gamingNewsRefresh?: (id?: string) => Promise<GamingResult>;
+  gamingGuideSave?: (guide: Record<string, unknown>) => Promise<GamingResult>;
+  gamingGuideRemove?: (id: string) => Promise<GamingResult>;
+  gamingGuideOpen?: (url: string) => Promise<GamingResult>;
+  gamingWowSave?: (patch: Record<string, unknown>) => Promise<GamingResult>;
+  gamingWowLaunch?: () => Promise<GamingResult>;
+  gamingPickFile?: (kind: 'executable' | 'folder') => Promise<{ ok: boolean; path?: string; canceled?: boolean }>;
+  gamingSessionDelete?: (id: string) => Promise<GamingResult>;
+  gamingSessionsClear?: () => Promise<GamingResult>;
+  gamingCompanion?: (open: boolean) => Promise<{ ok: boolean; open: boolean }>;
+  gamingCompanionAction?: (action: 'chat' | 'voice' | 'hub') => Promise<{ ok: boolean }>;
+  onGamingState?: (callback: (snapshot: GamingSnapshot) => void) => () => void;
+  onGamingReport?: (callback: (payload: { session: unknown; summary: string }) => void) => () => void;
+  onGamingNotify?: (callback: (payload: { title: string; body: string; priority: number }) => void) => () => void;
+  onCompanionAction?: (callback: (action: string) => void) => () => void;
 }
 
 export interface AutomationRunRecord {

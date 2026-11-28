@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import AutomationCenter, { type AutomationTab } from './components/AutomationCenter';
+import GamingHub from './components/GamingHub';
 import BootOverlay from './components/BootOverlay';
 import ContextDashboard from './components/ContextDashboard';
 import Conversation from './components/Conversation';
@@ -13,6 +14,7 @@ import Tiles from './components/Tiles';
 import UpdateView from './components/UpdateView';
 import TopBar from './components/TopBar';
 import { useAutomation } from './hooks/useAutomation';
+import { useGaming } from './hooks/useGaming';
 import { useJarvis } from './hooks/useJarvis';
 import { useTelemetry } from './hooks/useTelemetry';
 import { CONTEXT_LABEL, MODE_LABEL } from './lib/automation';
@@ -39,6 +41,8 @@ export default function App() {
   const jarvis = useJarvis();
   const telemetry = useTelemetry();
   const automation = useAutomation({ onSpeak: jarvis.announce, onNotice: jarvis.notify });
+  const gaming = useGaming({ onNotice: jarvis.notify });
+  const [gamingOpen, setGamingOpen] = useState(false);
   const [automationTab, setAutomationTab] = useState<AutomationTab | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
@@ -77,9 +81,19 @@ export default function App() {
     if (!desktop) return undefined;
     const offHotkey = desktop.onHotkey(() => inputRef.current?.focus());
     const offWake = desktop.onWake(() => inputRef.current?.focus());
+    const offCompanion = desktop.onCompanionAction?.((action) => {
+      if (action === 'hub') {
+        setGamingOpen(true);
+        return;
+      }
+      if (action === 'chat') {
+        inputRef.current?.focus();
+      }
+    });
     return () => {
       offHotkey?.();
       offWake?.();
+      offCompanion?.();
     };
   }, []);
 
@@ -181,6 +195,9 @@ export default function App() {
           </button>
           <button type="button" className="view-tab view-tab-priority" onClick={() => setAutomationTab('adaptive')}>
             Adaptiv
+          </button>
+          <button type="button" className="view-tab view-tab-priority view-tab-gaming" onClick={() => setGamingOpen(true)}>
+            Gaming
           </button>
         </nav>
 
@@ -343,6 +360,13 @@ export default function App() {
         initialTab={automationTab ?? 'routines'}
         automation={automation}
         onClose={() => setAutomationTab(null)}
+      />
+
+      <GamingHub
+        open={gamingOpen}
+        gaming={gaming}
+        automation={automation}
+        onClose={() => setGamingOpen(false)}
       />
 
       <DiagnosticsPanel

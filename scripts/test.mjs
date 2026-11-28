@@ -413,7 +413,7 @@ await test('Links öffnen im gewählten Browser, sonst im Systemstandard', () =>
 });
 
 await test('Programme schließen und feste Lautstärke je System', () => {
-  const { closeAppCommand, setVolumeCommand } = require('../electron/platform.cjs');
+  const { closeAppCommand, setVolumeCommand, getVolumeCommand } = require('../electron/platform.cjs');
 
   const spotify = closeAppCommand('Spotify', 'win32');
   assert.equal(spotify.command, 'taskkill');
@@ -441,6 +441,14 @@ await test('Programme schließen und feste Lautstärke je System', () => {
 
   assert.deepEqual(setVolumeCommand(30, '', 'darwin').args, ['-e', 'set volume output volume 30']);
   assert.deepEqual(setVolumeCommand(30, '', 'linux').args, ['set-sink-volume', '@DEFAULT_SINK@', '30%']);
+
+  const readWin = getVolumeCommand('C:\\app\\volume\\get.ps1', 'win32');
+  assert.equal(readWin.command, 'powershell.exe');
+  assert.equal(readWin.args.at(-2), '-File');
+  assert.equal(readWin.args.at(-1), 'C:\\app\\volume\\get.ps1');
+  assert.deepEqual(getVolumeCommand('', 'darwin').args, ['-e', 'output volume of (get volume settings)']);
+  assert.deepEqual(getVolumeCommand('', 'linux').args, ['get-sink-volume', '@DEFAULT_SINK@']);
+  assert.equal(getVolumeCommand('', 'win32').error, 'missing_script');
 });
 
 /* ------------------------------------------------------------ Sprachausgabe */
@@ -1770,6 +1778,147 @@ await test('Automation speichert Routinen lokal und validiert sie erneut', () =>
   const rejected = automation.saveRoutine({ name: 'Böse', trigger: { kind: 'manual' }, actions: [{ kind: 'shell', command: 'rm -rf /' }] });
   assert.equal(rejected.ok, false);
   rmSync(dir, { recursive: true, force: true });
+});
+
+/* ------------------------------------------------------------- Gaming Hub */
+
+await test('Gaming erkennt Steam-Bibliotheken und appmanifest-Daten', () => {
+  const internals = require('../electron/gaming-detect.cjs')._internals;
+  const vdf = '"libraryfolders" { "0" { "path" "C:\\\\Program Files (x86)\\\\Steam" } "1" { "path" "D:\\\\SteamLibrary" } }';
+  assert.deepEqual(internals.parseLibraryFolders(vdf), ['C:\\Program Files (x86)\\Steam', 'D:\\SteamLibrary']);
+  const acf = '"AppState" { "appid" "570" "name" "Dota 2" "installdir" "dota 2 beta" "StateFlags" "4" "SizeOnDisk" "12345" }';
+  assert.deepEqual(internals.parseAcf(acf), {
+    appid: '570',
+    name: 'Dota 2',
+    installdir: 'dota 2 beta',
+    stateFlags: '4',
+    sizeOnDisk: 12345,
+  });
+  assert.equal(internals.processName('C:\\Games\\Wow.exe'), 'wow');
+  assert.equal(internals.cleanName('  Test™  Spiel  '), 'Test Spiel');
+});
+
+await test('Gaming validiert Startwege und argumentiert ohne Shell', () => {
+  const internals = require('../electron/gaming.cjs')._internals;
+  assert.equal(internals.safeUri('steam://rungameid/570'), 'steam://rungameid/570');
+  assert.equal(internals.safeUri('file:///C:/Windows/System32/calc.exe'), '');
+  assert.equal(internals.safeUri('https://example.com/start'), '');
+  assert.equal(internals.safeHttpUrl('https://example.com/feed.xml'), 'https://example.com/feed.xml');
+  assert.equal(internals.safeHttpUrl('http://127.0.0.1/feed'), '');
+  assert.equal(internals.safeHttpUrl('javascript:alert(1)'), '');
+  assert.deepEqual(internals.splitArgs('"C:\\Pfad mit Leerzeichen\\spiel.exe" -windowed -console'), [
+    'C:\\Pfad mit Leerzeichen\\spiel.exe',
+    '-windowed',
+    '-console',
+  ]);
+  assert.throws(() => internals.splitArgs('a'.repeat(301)), /ungültig/);
+});
+
+await test('Gaming parst RSS und Atom ohne erfundene Inhalte', () => {
+  const internals = require('../electron/gaming.cjs')._internals;
+  const source = { id: 'src-test', name: 'Testquelle', kind: 'news', game: 'wow' };
+  const rss = `<?xml version="1.0"?><rss><channel>
+    <item><title>Patch 1.2 &amp; Klassen</title><link>https://example.com/patch</link><description>Notizen</description><pubDate>Tue, 03 Nov 2026 10:00:00 GMT</pubDate></item>
+    <item><title>Ohne Link</title><description>wird verworfen</description></item>
+  </channel></rss>`;
+  const parsed = internals.parseFeed(rss, source);
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0].title, 'Patch 1.2 & Klassen');
+  assert.equal(parsed[0].game, 'wow');
+  assert.equal(parsed[0].kind, 'news');
+  assert.ok(parsed[0].publishedAt > 0);
+  const atom = `<feed><entry><title>Atom-Guide</title><link href="https://example.com/guide"/><summary>Kurz</summary><updated>2026-11-03T10:00:00Z</updated></entry></feed>`;
+  assert.equal(internals.parseFeed(atom, source)[0].url, 'https://example.com/guide');
+  assert.equal(internals.parseFeed('<rss></rss>', source).length, 0);
+});
+
+await test('Gaming-Sitzung speichert echte Messwerte und vergleicht historisch', async () => {
+  const gaming = require('../electron/gaming.cjs');
+  const dir = tempDir('jarvis-gaming-');
+  const fakeExe = join(dir, 'Testspiel.exe');
+  writeFileSync(fakeExe, '');
+  let report = null;
+  const volumes = [];
+  gaming.configure({
+    file: join(dir, 'gaming.json'),
+    assetsDir: join(dir, 'assets'),
+    sampleSystem: async () => ({
+      cpu: { load: 42, temp: 71 },
+      gpu: { load: 55, temp: 68, vramUsed: 2_000_000_000, vramTotal: 8_000_000_000 },
+      mem: { percent: 48 },
+      net: { down: 1_250_000, up: 250_000 },
+    }),
+    beginGameMode: () => ({ ok: true }),
+    endGameMode: () => ({ ok: true }),
+    getVolume: async () => 63,
+    setVolume: async (percent) => {
+      volumes.push(percent);
+      return { ok: true };
+    },
+    notify: () => {},
+    onReport: (payload) => {
+      report = payload;
+    },
+  });
+  const added = gaming.addGame({
+    name: 'Testspiel',
+    launcher: 'manual',
+    exe: fakeExe,
+    process: 'testspiel',
+    genre: 'Test',
+  });
+  assert.equal(added.ok, true);
+  const profile = gaming.saveProfile({ gameId: added.game.id, applyVolume: true, audioPercent: 20 });
+  assert.equal(profile.ok, true);
+  gaming.observeContext({ processes: ['testspiel.exe'], mode: 'gaming' });
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.deepEqual(volumes, [20], 'Profil-Lautstärke wurde nicht gesetzt');
+  const snapshot = gaming.getState();
+  assert.ok(snapshot.activeSession, 'Sitzung wurde nicht erkannt');
+  assert.equal(snapshot.activeSession.tracking, 'process');
+  const stopped = gaming.stopSession();
+  assert.equal(stopped.ok, true);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(volumes.at(-1), 63, 'Vorherige Lautstärke wurde nicht wiederhergestellt');
+  assert.equal(stopped.session.avgCpu, 42);
+  assert.equal(stopped.session.maxGpuTemp, 68);
+  assert.equal(stopped.session.avgFps, null);
+  assert.match(stopped.summary, /Testspiel/);
+  assert.ok(report?.summary, 'Bericht fehlt');
+  const stored = JSON.parse(readFileSync(join(dir, 'gaming.json'), 'utf8'));
+  assert.equal(stored.sessions.length, 1);
+  assert.equal(stored.sessions[0].timeline.length, 1);
+  assert.equal(stored.sessions[0].avgCpu, 42);
+  gaming.deleteSession(stored.sessions[0].id);
+  assert.equal(gaming.getState().sessions.length, 0);
+  gaming.shutdown();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+await test('Gaming speichert Quellen nur mit sicheren http(s)-Adressen', () => {
+  const gaming = require('../electron/gaming.cjs');
+  const dir = tempDir('jarvis-gaming-src-');
+  gaming.configure({ file: join(dir, 'gaming.json'), log: () => {} });
+  assert.equal(gaming.saveSource({ name: 'Böse', url: 'file:///etc/passwd', kind: 'news', game: 'general' }).ok, false);
+  assert.equal(gaming.saveSource({ name: 'Lokal', url: 'http://localhost/feed', kind: 'news', game: 'general' }).ok, false);
+  const saved = gaming.saveSource({ name: 'Offiziell', url: 'https://example.com/feed.xml', kind: 'patch', game: 'wow' });
+  assert.equal(saved.ok, true);
+  assert.equal(saved.snapshot.sources[0].game, 'wow');
+  gaming.shutdown();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+await test('Automation stellt Gaming Mode bereit und gibt ihn wieder frei', () => {
+  const automation = require('../electron/automation.cjs');
+  automation.configure({ log: () => {} });
+  automation.setEnabled(true);
+  const start = automation.beginGameMode('Testspiel');
+  assert.equal(start.ok, true);
+  assert.equal(start.mode, 'gaming');
+  const end = automation.endGameMode();
+  assert.equal(end.ok, true);
+  assert.equal(automation.endGameMode().ok, false);
+  automation.setEnabled(false);
 });
 
 console.log(`\n${passed} bestanden, ${failed} fehlgeschlagen`);

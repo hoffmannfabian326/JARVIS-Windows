@@ -28,6 +28,7 @@ const {
   openUrlCommand,
   closeAppCommand,
   setVolumeCommand,
+  getVolumeCommand,
 } = require('./platform.cjs');
 const { WakeEngine } = require('./wake/engine.cjs');
 const monitor = require('./monitor.cjs');
@@ -45,6 +46,7 @@ const history = require('./history.cjs');
 const { SherpaStt, MODEL_NAME: STT_MODEL } = require('./stt/sherpa.cjs');
 const updater = require('./updater.cjs');
 const automation = require('./automation.cjs');
+const gaming = require('./gaming.cjs');
 
 app.setName('JARVIS');
 
@@ -74,6 +76,7 @@ activity.configure({ file: path.join(app.getPath('userData'), 'activity.jsonl') 
 history.configure({ file: path.join(app.getPath('userData'), 'history.json') });
 
 let win = null;
+let companionWin = null;
 let rendererReady = false;
 let tray = null;
 let serverProcess = null;
@@ -130,6 +133,16 @@ async function runSpec(spec) {
   const first = await run(spec.command, spec.args, options);
   if (first.ok || !spec.fallback) return first;
   return run(spec.fallback.command, spec.fallback.args);
+}
+
+/** Liest die Systemlautstärke, damit ein Gaming-Profil sie später zurückgeben kann. */
+async function getSystemVolume() {
+  const spec = getVolumeCommand(path.join(__dirname, 'volume', 'get.ps1'));
+  const result = await runSpec(spec);
+  if (!result.ok) return null;
+  const percent = /(\d{1,3})\s*%/.exec(result.message)?.[1] ?? /^(\d{1,3})$/.exec(result.message.trim())?.[1];
+  const value = Number(percent);
+  return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
 }
 
 function waitForHealth(port, attempts = 60) {
@@ -372,6 +385,94 @@ function sendToWin(channel, payload) {
   }
 }
 
+function sendToCompanion(channel, payload) {
+  try {
+    companionWin?.webContents.send(channel, payload);
+  } catch {
+    /* Companion kann bereits geschlossen sein. */
+  }
+}
+
+function showMainWindow() {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function isCompanionOpen() {
+  return Boolean(companionWin && !companionWin.isDestroyed() && companionWin.isVisible());
+}
+
+function createCompanionWindow(focus = true) {
+  if (!win) return null;
+  if (companionWin && !companionWin.isDestroyed()) {
+    if (focus) {
+      companionWin.show();
+      companionWin.focus();
+    } else {
+      companionWin.showInactive();
+    }
+    return companionWin;
+  }
+  const display = screen.getPrimaryDisplay().workArea;
+  companionWin = new BrowserWindow({
+    width: 380,
+    height: 560,
+    minWidth: 340,
+    minHeight: 430,
+    maxWidth: 560,
+    maxHeight: 900,
+    x: Math.max(display.x, display.x + display.width - 404),
+    y: Math.max(display.y, display.y + display.height - 584),
+    frame: false,
+    resizable: true,
+    movable: true,
+    alwaysOnTop: true,
+    skipTaskbar: false,
+    backgroundColor: '#100D0B',
+    title: 'J.A.R.V.I.S. — Gaming Companion',
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      backgroundThrottling: false,
+    },
+  });
+  companionWin.setAlwaysOnTop(true, 'floating');
+  companionWin.loadURL(`${appUrl}${appUrl.includes('?') ? '&' : '?'}companion=1`);
+  companionWin.once('ready-to-show', () => {
+    if (focus) companionWin?.show();
+    else companionWin?.showInactive();
+    refreshTrayMenu();
+  });
+  companionWin.on('close', (event) => {
+    if (!quitting) {
+      event.preventDefault();
+      companionWin?.hide();
+      refreshTrayMenu();
+    }
+  });
+  companionWin.on('closed', () => {
+    companionWin = null;
+    refreshTrayMenu();
+  });
+  companionWin.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  return companionWin;
+}
+
+function setCompanionOpen(open, focus = true) {
+  if (open) createCompanionWindow(focus);
+  else if (companionWin && !companionWin.isDestroyed()) companionWin.hide();
+  refreshTrayMenu();
+  return { ok: true, open: isCompanionOpen() };
+}
+
 /** Setzt das Weckwort nach einer STT-Sitzung wieder gemäß Richtlinie fort. */
 function resumeWakeAfterStt() {
   if (stt.isActive()) return;
@@ -395,6 +496,19 @@ function refreshTrayMenu() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: 'J.A.R.V.I.S. öffnen', click: () => { win?.show(); win?.focus(); } },
+      {
+        label: 'Gaming Hub öffnen',
+        click: () => {
+          showMainWindow();
+          sendToWin('jarvis:companion-action', 'hub');
+        },
+      },
+      {
+        label: 'Gaming Companion',
+        type: 'checkbox',
+        checked: isCompanionOpen(),
+        click: (item) => setCompanionOpen(item.checked, true),
+      },
       { label: `Zuhören (${hotkeyLabel(hotkeys.listen)})`, click: triggerListen },
       { label: `Push-to-talk (${hotkeyLabel(hotkeys.ptt)})`, click: () => handlePtt() },
       { type: 'separator' },
@@ -1072,6 +1186,57 @@ ipcMain.handle('jarvis:automationHistory', (_event, limit) => automation.history
 ipcMain.handle('jarvis:automationClearHistory', () => automation.clearHistory());
 ipcMain.handle('jarvis:automationCheck', () => automation.checkTriggersNow());
 
+/* ------------------------------------------------------------------ Gaming */
+
+ipcMain.handle('jarvis:gamingState', () => ({ ok: true, snapshot: gaming.getState() }));
+ipcMain.handle('jarvis:gamingDetect', () => gaming.detectGames());
+ipcMain.handle('jarvis:gamingLaunch', (_event, id) => gaming.launchGame(id));
+ipcMain.handle('jarvis:gamingStop', () => gaming.stopSession());
+ipcMain.handle('jarvis:gamingSettings', (_event, patch) => gaming.setSettings(patch ?? {}));
+ipcMain.handle('jarvis:gamingSelect', (_event, id) => gaming.selectGame(id));
+ipcMain.handle('jarvis:gamingAddGame', (_event, input) => gaming.addGame(input ?? {}));
+ipcMain.handle('jarvis:gamingUpdateGame', (_event, id, patch) => gaming.updateGame(id, patch ?? {}));
+ipcMain.handle('jarvis:gamingRemoveGame', (_event, id) => gaming.removeGame(id));
+ipcMain.handle('jarvis:gamingProfileSave', (_event, profile) => gaming.saveProfile(profile ?? {}));
+ipcMain.handle('jarvis:gamingProfileDelete', (_event, id) => gaming.deleteProfile(id));
+ipcMain.handle('jarvis:gamingAssetUpload', (_event, dataUrl) => gaming.uploadAsset(dataUrl));
+ipcMain.handle('jarvis:gamingArtwork', async (_event, id, kind) => {
+  const artwork = await gaming.getArtwork(id, kind === 'hero' ? 'hero' : 'cover');
+  return { ok: Boolean(artwork), artwork: artwork || null };
+});
+ipcMain.handle('jarvis:gamingSourceSave', (_event, source) => gaming.saveSource(source ?? {}));
+ipcMain.handle('jarvis:gamingSourceRemove', (_event, id) => gaming.removeSource(id));
+ipcMain.handle('jarvis:gamingNewsRefresh', (_event, id) => gaming.refreshArticles(id ?? ''));
+ipcMain.handle('jarvis:gamingGuideSave', (_event, guide) => gaming.saveGuide(guide ?? {}));
+ipcMain.handle('jarvis:gamingGuideRemove', (_event, id) => gaming.removeGuide(id));
+ipcMain.handle('jarvis:gamingGuideOpen', (_event, url) => gaming.openGuide(url));
+ipcMain.handle('jarvis:gamingWowSave', (_event, patch) => gaming.saveWow(patch ?? {}));
+ipcMain.handle('jarvis:gamingWowLaunch', () => gaming.launchWowLauncher());
+ipcMain.handle('jarvis:gamingPickFile', async (_event, kind) => {
+  if (!win) return { ok: false, error: 'Hauptfenster nicht bereit.' };
+  const executable = kind === 'executable';
+  const result = await dialog.showOpenDialog(win, {
+    title: executable ? 'Spiel oder Launcher auswählen' : 'Ordner auswählen',
+    properties: executable ? ['openFile'] : ['openDirectory'],
+    filters: executable ? [{ name: 'Programme und Verknüpfungen', extensions: ['exe', 'lnk'] }] : undefined,
+  });
+  if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true };
+  return { ok: true, path: result.filePaths[0] };
+});
+ipcMain.handle('jarvis:gamingSessionDelete', (_event, id) => gaming.deleteSession(id));
+ipcMain.handle('jarvis:gamingSessionsClear', () => gaming.clearSessions());
+ipcMain.handle('jarvis:gamingCompanion', (_event, open) => setCompanionOpen(Boolean(open), true));
+ipcMain.handle('jarvis:gamingCompanionAction', (_event, action) => {
+  if (action === 'voice') {
+    showMainWindow();
+    handlePtt();
+    return { ok: true };
+  }
+  showMainWindow();
+  sendToWin('jarvis:companion-action', action === 'hub' ? 'hub' : 'chat');
+  return { ok: true };
+});
+
 ipcMain.on('jarvis:wake-audio', (event, buffer) => {
   if (!wakeEngine || !wakeWindow || event.sender !== wakeWindow.webContents) return;
   if (!(buffer instanceof ArrayBuffer) || buffer.byteLength % 2 !== 0) return;
@@ -1115,6 +1280,7 @@ if (!app.requestSingleInstanceLock()) {
     automation.configure({
       file: path.join(app.getPath('userData'), 'automation.json'),
       getWindow: () => win,
+      onContext: (context) => gaming.observeContext(context),
       sampleSystem: async () => (monitor.getConsent() ? monitor.sample() : null),
       getIdleSeconds: () => powerMonitor.getSystemIdleTime(),
       getDisplay: () => {
@@ -1158,6 +1324,45 @@ if (!app.requestSingleInstanceLock()) {
       openExternal: (url) => shell.openExternal(url),
       log: (level, source, message) =>
         diagnostics.record({ level: level === 'warning' ? 'warning' : 'info', source, message: String(message).slice(0, 240) }),
+    });
+
+    gaming.configure({
+      file: path.join(app.getPath('userData'), 'gaming.json'),
+      assetsDir: path.join(app.getPath('userData'), 'gaming-assets'),
+      sampleSystem: async () => (monitor.getConsent() ? monitor.sample() : null),
+      beginGameMode: (name) => automation.beginGameMode(name),
+      endGameMode: () => automation.endGameMode(),
+      runRoutineById: (id, source) => automation.runRoutineById(id, source),
+      getAutomationState: () => automation.getState(),
+      setVolume: (percent) => runSpec(setVolumeCommand(percent, path.join(__dirname, 'volume', 'level.ps1'))),
+      getVolume: () => getSystemVolume(),
+      openExternal: (url) => shell.openExternal(url),
+      openPath: (target) => shell.openPath(target),
+      onCompanion: (open) => setCompanionOpen(Boolean(open), false),
+      isCompanionOpen,
+      notify: (title, body, priority) => {
+        try {
+          if (Notification.isSupported()) new Notification({ title, body, silent: false }).show();
+        } catch {
+          /* kein Benachrichtigungsdienst */
+        }
+        sendToWin('jarvis:gaming-notify', { title, body, priority });
+        sendToCompanion('jarvis:gaming-notify', { title, body, priority });
+      },
+      onState: (state) => {
+        sendToWin('jarvis:gaming-state', state);
+        sendToCompanion('jarvis:gaming-state', state);
+      },
+      onReport: (report) => {
+        sendToWin('jarvis:gaming-report', report);
+        sendToCompanion('jarvis:gaming-report', report);
+      },
+      log: (level, source, message) =>
+        diagnostics.record({
+          level: level === 'warning' ? 'warning' : 'info',
+          source,
+          message: String(message).slice(0, 240),
+        }),
     });
 
     updater.configure({
@@ -1222,6 +1427,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('before-quit', () => {
     quitting = true;
+    gaming.shutdown();
     stt.dispose();
   });
 
@@ -1236,6 +1442,8 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('will-quit', () => {
     updater.stop();
+    if (companionWin && !companionWin.isDestroyed()) companionWin.destroy();
+    companionWin = null;
     globalShortcut.unregisterAll();
     wakeEngine?.dispose();
     wakeWindow?.destroy();

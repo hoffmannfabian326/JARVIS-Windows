@@ -373,10 +373,25 @@ function setVolumeCommand(percent, scriptPath, platform = process.platform) {
   };
 }
 
+function getVolumeCommand(scriptPath, platform = process.platform) {
+  if (platform === 'darwin') {
+    return { command: 'osascript', args: ['-e', 'output volume of (get volume settings)'] };
+  }
+  if (platform === 'linux') {
+    return { command: 'pactl', args: ['get-sink-volume', '@DEFAULT_SINK@'] };
+  }
+  if (!scriptPath) return { error: 'missing_script' };
+  return {
+    command: 'powershell.exe',
+    args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', String(scriptPath)],
+  };
+}
+
 module.exports = {
   mediaCommand,
   volumeCommand,
   lockCommand,
+  getVolumeCommand,
   openAppCommand,
   openUrlCommand,
   closeAppCommand,

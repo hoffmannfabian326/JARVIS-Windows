@@ -98,6 +98,52 @@ contextBridge.exposeInMainWorld('jarvisDesktop', {
     ipcRenderer.on('jarvis:automation-briefing', listener);
     return () => ipcRenderer.removeListener('jarvis:automation-briefing', listener);
   },
+  gamingState: () => ipcRenderer.invoke('jarvis:gamingState'),
+  gamingDetect: () => ipcRenderer.invoke('jarvis:gamingDetect'),
+  gamingLaunch: (id) => ipcRenderer.invoke('jarvis:gamingLaunch', id),
+  gamingStop: () => ipcRenderer.invoke('jarvis:gamingStop'),
+  gamingSettings: (patch) => ipcRenderer.invoke('jarvis:gamingSettings', patch ?? {}),
+  gamingSelect: (id) => ipcRenderer.invoke('jarvis:gamingSelect', id),
+  gamingAddGame: (input) => ipcRenderer.invoke('jarvis:gamingAddGame', input ?? {}),
+  gamingUpdateGame: (id, patch) => ipcRenderer.invoke('jarvis:gamingUpdateGame', id, patch ?? {}),
+  gamingRemoveGame: (id) => ipcRenderer.invoke('jarvis:gamingRemoveGame', id),
+  gamingProfileSave: (profile) => ipcRenderer.invoke('jarvis:gamingProfileSave', profile ?? {}),
+  gamingProfileDelete: (id) => ipcRenderer.invoke('jarvis:gamingProfileDelete', id),
+  gamingAssetUpload: (dataUrl) => ipcRenderer.invoke('jarvis:gamingAssetUpload', dataUrl),
+  gamingArtwork: (id, kind) => ipcRenderer.invoke('jarvis:gamingArtwork', id, kind),
+  gamingSourceSave: (source) => ipcRenderer.invoke('jarvis:gamingSourceSave', source ?? {}),
+  gamingSourceRemove: (id) => ipcRenderer.invoke('jarvis:gamingSourceRemove', id),
+  gamingNewsRefresh: (id) => ipcRenderer.invoke('jarvis:gamingNewsRefresh', id ?? ''),
+  gamingGuideSave: (guide) => ipcRenderer.invoke('jarvis:gamingGuideSave', guide ?? {}),
+  gamingGuideRemove: (id) => ipcRenderer.invoke('jarvis:gamingGuideRemove', id),
+  gamingGuideOpen: (url) => ipcRenderer.invoke('jarvis:gamingGuideOpen', url),
+  gamingWowSave: (patch) => ipcRenderer.invoke('jarvis:gamingWowSave', patch ?? {}),
+  gamingWowLaunch: () => ipcRenderer.invoke('jarvis:gamingWowLaunch'),
+  gamingPickFile: (kind) => ipcRenderer.invoke('jarvis:gamingPickFile', kind === 'folder' ? 'folder' : 'executable'),
+  gamingSessionDelete: (id) => ipcRenderer.invoke('jarvis:gamingSessionDelete', id),
+  gamingSessionsClear: () => ipcRenderer.invoke('jarvis:gamingSessionsClear'),
+  gamingCompanion: (open) => ipcRenderer.invoke('jarvis:gamingCompanion', open),
+  gamingCompanionAction: (action) => ipcRenderer.invoke('jarvis:gamingCompanionAction', action),
+  onGamingState(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('jarvis:gaming-state', listener);
+    return () => ipcRenderer.removeListener('jarvis:gaming-state', listener);
+  },
+  onGamingReport(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('jarvis:gaming-report', listener);
+    return () => ipcRenderer.removeListener('jarvis:gaming-report', listener);
+  },
+  onGamingNotify(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('jarvis:gaming-notify', listener);
+    return () => ipcRenderer.removeListener('jarvis:gaming-notify', listener);
+  },
+  onCompanionAction(callback) {
+    const listener = (_event, action) => callback(String(action ?? ''));
+    ipcRenderer.on('jarvis:companion-action', listener);
+    return () => ipcRenderer.removeListener('jarvis:companion-action', listener);
+  },
   getMonitorConsent: () => ipcRenderer.invoke('jarvis:monitorConsent'),
   setMonitorConsent: (granted) => ipcRenderer.invoke('jarvis:monitorConsent', granted),
   sampleSystem: () => ipcRenderer.invoke('jarvis:monitorSample'),

@@ -1013,6 +1013,14 @@ async function tick() {
     tick.lastProcesses = current;
     tick.lastContext = context;
 
+    // Der Gaming Hub wertet denselben Kontext aus, ohne einen zweiten
+    // Prozess- oder Fenster-Scan zu starten.
+    try {
+      refs.onContext?.(context);
+    } catch (error) {
+      refs.log('warning', 'Automation', `Gaming-Kontext fehlgeschlagen: ${text(error?.message || error, 160)}`);
+    }
+
     // Der Start-Trigger läuft genau einmal, beim ersten Tick nach dem Start.
     events.startup = !startupHandled && data.settings.enabled;
     if (!startupHandled) startupHandled = true;
@@ -1256,6 +1264,54 @@ function toggleRoutine(id, enabled) {
   return { ok: true, snapshot: snapshot() };
 }
 
+function beginGameMode(gameName) {
+  if (!data) return { ok: false, reason: 'Engine nicht bereit.' };
+  if (!data.settings.enabled) return { ok: false, reason: 'Automationen sind ausgeschaltet.' };
+  if (data.settings.manualMode) return { ok: false, reason: 'Manueller Modus hat Vorrang.' };
+  if (override?.routineId === 'gaming-hub' && override.mode === 'gaming') {
+    return { ok: true, mode: 'gaming', reason: 'Gaming-Modus läuft bereits.' };
+  }
+  const previous = override?.previous || (previousMode && previousMode !== 'gaming' ? previousMode : 'neutral');
+  override = {
+    mode: 'gaming',
+    previous,
+    routineId: 'gaming-hub',
+    routineName: gameName ? `Gaming: ${text(gameName, 60)}` : 'Gaming Hub',
+    until: 0,
+  };
+  suppressModeTriggerUntil = Date.now() + Math.max(2500, (data.settings.pollSeconds || 5) * 1000 + 1000);
+  refreshContextAfterSettings();
+  broadcast();
+  return { ok: true, mode: 'gaming', previous };
+}
+
+function endGameMode() {
+  if (!data || override?.routineId !== 'gaming-hub') {
+    return { ok: false, reason: 'Kein Gaming-Override aktiv.' };
+  }
+  override = null;
+  suppressModeTriggerUntil = Date.now() + Math.max(2500, (data.settings.pollSeconds || 5) * 1000 + 1000);
+  refreshContextAfterSettings();
+  broadcast();
+  return { ok: true };
+}
+
+async function runRoutineById(id, source = 'Gaming-Profil') {
+  if (!data) return { ok: false, status: 'skipped', message: 'Engine nicht bereit.' };
+  if (!data.settings.enabled) return { ok: false, status: 'skipped', message: 'Automationen sind ausgeschaltet.' };
+  const routine = data.routines.find((entry) => entry.id === text(id, 60));
+  if (!routine) return { ok: false, status: 'skipped', message: 'Routine nicht gefunden.' };
+  const context = tick.lastContext || (await sampleContext());
+  const result = await runRoutine(routine, context, { source });
+  broadcast();
+  return {
+    ok: result.status === 'ok',
+    status: result.status,
+    message: result.message,
+    actions: result.actions,
+  };
+}
+
 function setHiddenModules(modules) {
   if (!data) return { ok: false, error: 'Engine nicht bereit.' };
   data.settings.hiddenModules = (Array.isArray(modules) ? modules : []).filter((module) => MODULES.has(module));
@@ -1362,6 +1418,9 @@ module.exports = {
   duplicateRoutine,
   toggleRoutine,
   runManual,
+  beginGameMode,
+  endGameMode,
+  runRoutineById,
   simulate,
   history,
   clearHistory,

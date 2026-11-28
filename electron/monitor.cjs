@@ -62,6 +62,8 @@ async function sample() {
       name: gpu?.model ?? null,
       load: typeof gpu?.utilizationGpu === 'number' ? Math.round(gpu.utilizationGpu) : null,
       temp: typeof gpu?.temperatureGpu === 'number' ? Math.round(gpu.temperatureGpu) : null,
+      vramUsed: Number.isFinite(gpu?.memoryUsed) ? Math.round(gpu.memoryUsed) : null,
+      vramTotal: Number.isFinite(gpu?.memoryTotal) ? Math.round(gpu.memoryTotal) : null,
     },
     mem: mem
       ? {
